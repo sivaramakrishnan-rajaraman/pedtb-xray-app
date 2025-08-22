@@ -5,7 +5,7 @@
 
 # ---- App runtime ----
 streamlit>=1.36,<1.49
-numpy --only-binary=numpy
+numpy<2.0 --only-binary=numpy
 pillow>=10.2 --only-binary=pillow
 
 # Hugging Face hub + safetensors
@@ -13,22 +13,24 @@ huggingface_hub>=0.23,<0.35 --only-binary=huggingface_hub
 safetensors>=0.4.3 --only-binary=safetensors
 
 # Torch stack (CPU wheels on Streamlit Cloud)
-torch==2.2.1 --only-binary=torch
-torchvision==0.17.1 --only-binary=torchvision
+# Changed torch, torchvision, and timm to a more recent, compatible version
+torch==2.5.0 --only-binary=torch
+torchvision==0.20.0 --only-binary=torchvision
 timm==1.0.19 --only-binary=timm
-pytorch-lightning==2.2.5 --only-binary=pytorch-lightning
-
-# ONNX inference for YOLO (no OpenCV dependency)
-onnxruntime==1.17.3 --only-binary=onnxruntime
-
-# Ultralytics (added)
-# Use a specific version or range if needed. Ultralytics requires a few other dependencies, which will be installed automatically unless explicitly excluded with --no-deps.
-ultralytics==8.2.39 --only-binary=ultralytics # Assuming version 8.2.39 is the current and compatible version.
-
-# ✅ Force HEADLESS OpenCV (prevents libGL issues)
-opencv-python-headless==4.10.0.84 --only-binary=opencv-python-headless
+# Updated PyTorch Lightning to a compatible version (PyTorch 2.5 is compatible with recent versions)
+pytorch-lightning==2.5.0 --only-binary=pytorch-lightning
 
 # PyTorch Grad-CAM (pull from git to avoid any packaging quirks)
 # NOTE: This package *imports* cv2 but does NOT hard-require opencv-python;
 # our headless build above satisfies it.
 grad-cam @ git+https://github.com/jacobgil/pytorch-grad-cam
+
+# Ultralytics (added)
+# Use a specific version or range if needed.
+ultralytics==8.2.39 --only-binary=ultralytics
+
+# ONNX inference for YOLO (no OpenCV dependency)
+onnxruntime==1.17.3 --only-binary=onnxruntime
+
+# ✅ Force HEADLESS OpenCV (prevents libGL)
+opencv-python-headless==4.10.0.84 --only-binary=opencv-python-headless
