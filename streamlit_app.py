@@ -12,7 +12,11 @@ from torchvision import transforms
 
 from src.hf_utils import hf_download
 from src.pneumonia_model import PneumoniaModel
-from src.cam_utils import compute_cam_mask, overlay_heatmap_on_rgb, contours_and_boxes_on_rgb
+from src.cam_utils import (
+    compute_cam_mask,
+    overlay_heatmap_on_rgb,
+    contours_and_boxes_on_rgb,  # use this one in the app
+)
 from src.yolo_onnx import YOLOOnnx
 
 # -------------------------------
