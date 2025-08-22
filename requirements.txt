@@ -5,7 +5,7 @@
 
 # ---- App runtime ----
 streamlit>=1.36,<1.49
-numpy<2.0 --only-binary=numpy
+numpy --only-binary=numpy
 pillow>=10.2 --only-binary=pillow
 
 # Hugging Face hub + safetensors
