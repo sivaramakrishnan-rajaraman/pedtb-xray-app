@@ -1,84 +1,153 @@
 # src/yolo_onnx.py
 from __future__ import annotations
-from typing import Tuple, List, Optional
+from typing import Tuple, List
 import numpy as np
-from PIL import Image, ImageOps
 import onnxruntime as ort
+import cv2
 
-def letterbox_rgb(
-    rgb: np.ndarray,
-    new_shape: int = 640,
-    color: Tuple[int, int, int] = (114, 114, 114),
-) -> Tuple[np.ndarray, float, Tuple[int, int]]:
+def letterbox(
+    img: np.ndarray,
+    new_shape: int | Tuple[int, int] = 640,
+    color=(114, 114, 114),
+    auto=False,
+    scaleFill=False,
+    scaleup=True,
+    stride=32,
+):
     """
-    Resize & pad an RGB image to a square new_shape, preserving aspect ratio.
-    Returns:
-      - padded RGB (H,W,3) uint8
-      - scale r
-      - pad (left, top)
+    Resize + pad to meet stride-multiple constraints like YOLOv8.
+    Returns: img, ratio, (dw, dh)
     """
-    H, W = rgb.shape[:2]
+    shape = img.shape[:2]  # current shape [h, w]
     if isinstance(new_shape, int):
         new_shape = (new_shape, new_shape)
 
-    r = min(new_shape[0] / H, new_shape[1] / W)
-    new_unpad = (int(round(W * r)), int(round(H * r)))  # (w,h)
+    # Scale ratio (new / old)
+    r = min(new_shape[0] / shape[0], new_shape[1] / shape[1])
+    if not scaleup:  # only scale down
+        r = min(r, 1.0)
 
-    im = Image.fromarray(rgb)
-    if im.size != new_unpad:
-        im = im.resize(new_unpad, Image.BILINEAR)
+    # Compute padding
+    new_unpad = (int(round(shape[1] * r)), int(round(shape[0] * r)))
+    dw, dh = new_shape[1] - new_unpad[0], new_shape[0] - new_unpad[1]  # width, height
+    if auto:  # minimum rectangle
+        dw, dh = np.mod(dw, stride), np.mod(dh, stride)
+    elif scaleFill:  # stretch
+        dw, dh = 0.0, 0.0
+        new_unpad = new_shape
+        r = new_shape[1] / shape[1], new_shape[0] / shape[0]
 
-    pad_w = new_shape[1] - new_unpad[0]
-    pad_h = new_shape[0] - new_unpad[1]
-    left = pad_w // 2
-    top  = pad_h // 2
+    dw /= 2
+    dh /= 2
 
-    padded = ImageOps.expand(im, border=(left, top, pad_w - left, pad_h - top), fill=color)
-    return np.array(padded, dtype=np.uint8), r, (left, top)
+    if shape[::-1] != new_unpad:  # resize
+        img = cv2.resize(img, new_unpad, interpolation=cv2.INTER_LINEAR)
+    top, bottom = int(round(dh - 0.1)), int(round(dh + 0.1))
+    left, right = int(round(dw - 0.1)), int(round(dw + 0.1))
+    img = cv2.copyMakeBorder(img, top, bottom, left, right, cv2.BORDER_CONSTANT, value=color)
 
-def scale_boxes_back(xyxy: np.ndarray, r: float, pad: Tuple[int,int], orig_shape: Tuple[int,int]):
-    """Map boxes from letterboxed space back to original image space."""
-    H, W = orig_shape
-    x1 = (xyxy[:,0] - pad[0]) / r
-    y1 = (xyxy[:,1] - pad[1]) / r
-    x2 = (xyxy[:,2] - pad[0]) / r
-    y2 = (xyxy[:,3] - pad[1]) / r
-    boxes = np.stack([x1,y1,x2,y2], axis=1)
-    boxes[:, [0,2]] = boxes[:, [0,2]].clip(0, W - 1)
-    boxes[:, [1,3]] = boxes[:, [1,3]].clip(0, H - 1)
-    return boxes
+    ratio = (r, r)
+    return img, ratio, (left, top)
+
+def _nms(boxes, scores, iou_thr=0.75):
+    """Basic NMS, expects boxes [N,4] in xyxy, scores [N]."""
+    if boxes.size == 0:
+        return np.empty((0,), dtype=int)
+    x1, y1, x2, y2 = boxes.T
+    areas = (x2 - x1) * (y2 - y1)
+    order = scores.argsort()[::-1]
+    keep = []
+    while order.size > 0:
+        i = order[0]
+        keep.append(i)
+        xx1 = np.maximum(x1[i], x1[order[1:]])
+        yy1 = np.maximum(y1[i], y1[order[1:]])
+        xx2 = np.minimum(x2[i], x2[order[1:]])
+        yy2 = np.minimum(y2[i], y2[order[1:]])
+        w = np.maximum(0.0, xx2 - xx1)
+        h = np.maximum(0.0, yy2 - yy1)
+        inter = w * h
+        ov = inter / (areas[i] + areas[order[1:]] - inter + 1e-7)
+        inds = np.where(ov <= iou_thr)[0]
+        order = order[inds + 1]
+    return np.array(keep, dtype=int)
 
 class YOLOOnnx:
-    """
-    Expects an Ultralytics-exported ONNX with NMS, output shape (1, N, 6):
-    [x1, y1, x2, y2, score, cls]
-    """
-    def __init__(self, onnx_path: str, img_size: int = 640):
+    def __init__(self, onnx_path: str, providers: List[str] | None = None, input_size: int = 640):
         self.session = ort.InferenceSession(
             onnx_path,
-            providers=["CPUExecutionProvider"]  # Streamlit Cloud CPU
+            providers=providers or ["CPUExecutionProvider"]
         )
-        self.input_name  = self.session.get_inputs()[0].name
-        self.output_name = self.session.get_outputs()[0].name
-        self.img_size    = int(img_size)
+        self.input_name = self.session.get_inputs()[0].name
+        self.input_size = int(input_size)
 
-    def detect(self, rgb: np.ndarray, conf_thres: float = 0.25, iou_thres: float = 0.75):
-        H0, W0 = rgb.shape[:2]
-        img, r, pad = letterbox_rgb(rgb, new_shape=self.img_size)
+    def _preprocess(self, img_bgr: np.ndarray):
+        lb, ratio, pad = letterbox(img_bgr, new_shape=self.input_size, stride=32, auto=False)
+        img = lb.transpose(2, 0, 1)  # HWC->CHW
+        img = np.ascontiguousarray(img, dtype=np.float32) / 255.0
+        if img.ndim == 3:
+            img = img[None]  # add batch
+        return img, ratio, pad, lb.shape[:2]  # (bh,bw)
 
-        # prepare tensor: (1,3,H,W) float32 in [0,1]
-        im = img.transpose(2, 0, 1)[None].astype(np.float32) / 255.0
+    def _postprocess(self, preds: np.ndarray, origin_shape, ratio, pad, conf_thr=0.25, iou_thr=0.75):
+        """
+        Assumes ONNX outputs [batch, num, 6]: [x, y, w, h, conf, cls] OR [x1,y1,x2,y2, conf, cls].
+        We’ll detect format by simple heuristic.
+        """
+        H0, W0 = origin_shape
+        pred = preds[0]
+        if pred.size == 0:
+            return []
 
-        preds = self.session.run([self.output_name], {self.input_name: im})[0]
-        if preds.ndim != 3 or preds.shape[-1] < 6:
-            raise RuntimeError("Unexpected ONNX output. Export with nms=True.")
+        if pred.shape[1] < 6:
+            raise RuntimeError("Unexpected YOLO ONNX output shape")
 
-        det = preds[0]  # (N,6)
-        xyxy, scores, cls = det[:, :4], det[:, 4], det[:, 5].astype(np.int32)
-        keep = scores >= float(conf_thres)
-        xyxy, scores, cls = xyxy[keep], scores[keep], cls[keep]
-        if xyxy.shape[0] == 0:
-            return xyxy, scores, cls
+        boxes = pred[:, :4].copy()
+        scores = pred[:, 4].copy()
+        # xywh or xyxy?
+        # If x2<x1 anywhere, we assume xywh
+        assume_xywh = np.any(boxes[:, 2] < boxes[:, 0])
+        if assume_xywh:
+            # xywh -> xyxy
+            boxes[:, 0] = boxes[:, 0] - boxes[:, 2] / 2
+            boxes[:, 1] = boxes[:, 1] - boxes[:, 3] / 2
+            boxes[:, 2] = boxes[:, 0] + boxes[:, 2]
+            boxes[:, 3] = boxes[:, 1] + boxes[:, 3]
 
-        xyxy = scale_boxes_back(xyxy, r, pad, (H0, W0))
-        return xyxy, scores, cls
+        # Filter by confidence
+        m = scores >= float(conf_thr)
+        boxes, scores = boxes[m], scores[m]
+        if boxes.size == 0:
+            return []
+
+        # NMS
+        keep = _nms(boxes, scores, iou_thr=iou_thr)
+        boxes, scores = boxes[keep], scores[keep]
+
+        # Map back to original image: undo padding, then divide by ratio
+        # boxes are in letterboxed image coords
+        (padw, padh) = pad
+        boxes[:, [0, 2]] -= padw
+        boxes[:, [1, 3]] -= padh
+        boxes /= ratio[0]  # same for x and y
+
+        # Clip to original
+        boxes[:, [0, 2]] = boxes[:, [0, 2]].clip(0, W0 - 1)
+        boxes[:, [1, 3]] = boxes[:, [1, 3]].clip(0, H0 - 1)
+
+        # Return: list of (x1,y1,x2,y2,score)
+        return [(float(x1), float(y1), float(x2), float(y2), float(s)) for (x1, y1, x2, y2), s in zip(boxes, scores)]
+
+    def predict(self, img_bgr: np.ndarray, conf=0.25, iou=0.75):
+        H0, W0 = img_bgr.shape[:2]
+        inp, ratio, pad, _ = self._preprocess(img_bgr)
+        ort_outs = self.session.run(None, {self.input_name: inp})
+        # support either [outputs] or multiple; choose the first with 3 dims
+        outs = None
+        for o in ort_outs:
+            if o.ndim == 3:
+                outs = o
+                break
+        if outs is None:
+            outs = ort_outs[0]
+        return self._postprocess(outs, (H0, W0), ratio, pad, conf_thr=conf, iou_thr=iou)
