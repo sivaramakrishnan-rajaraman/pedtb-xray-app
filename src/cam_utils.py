@@ -1,8 +1,9 @@
 # src/cam_utils.py
 from __future__ import annotations
-from typing import Tuple, Optional, Dict
+from typing import Tuple, Optional
 import numpy as np
-import cv2
+from PIL import Image, ImageDraw
+import matplotlib.cm as cm
 import torch
 import torch.nn as nn
 
@@ -13,10 +14,14 @@ from pytorch_grad_cam import (
 )
 from pytorch_grad_cam.utils.model_targets import ClassifierOutputTarget
 
-# ------------ target discovery ------------
-def _find_last_conv(mod: nn.Module) -> Optional[nn.Conv2d]:
+from skimage.measure import find_contours, label, regionprops
+
+# ---------------------------
+# Target layer discovery
+# ---------------------------
+def _find_last_conv(module: nn.Module) -> Optional[nn.Conv2d]:
     last = None
-    for _, m in mod.named_modules():
+    for _, m in module.named_modules():
         if isinstance(m, nn.Conv2d):
             last = m
     return last
@@ -33,7 +38,9 @@ def discover_target_layer(model: nn.Module) -> nn.Module:
         raise RuntimeError("No Conv2d layer found for CAM target.")
     return last
 
-# ------------ CAM builder ------------
+# ---------------------------
+# Build the CAM object
+# ---------------------------
 _CAM_MAP = {
     "gradcam": GradCAM,
     "gradcam++": GradCAMPlusPlus,
@@ -47,85 +54,95 @@ _CAM_MAP = {
     "hirescam": HiResCAM,
 }
 
-def build_cam(model: nn.Module, method: str = "gradcam") -> Tuple[nn.Module, nn.Module]:
+def build_cam(model: nn.Module, method: str = "gradcam"):
     tl = discover_target_layer(model)
-    CAMClass = _CAM_MAP.get(method.lower(), GradCAM)
+    CAMClass = _CAM_MAP.get((method or "gradcam").lower(), GradCAM)
     cam = CAMClass(model=model, target_layers=[tl], reshape_transform=None)
     cam.batch_size = 1
-    return cam, tl
+    return cam
 
-# ------------ main CAM call ------------
+# ---------------------------
+# Compute CAM mask (returns HxW in [0,1], same as input spatial)
+# ---------------------------
 def compute_cam_mask(
     model: nn.Module,
-    input_tensor: torch.Tensor,   # (1,3,H,W) normalized
+    input_tensor: torch.Tensor,  # (1,3,H,W) normalized
     class_index: int = 1,
     method: str = "gradcam",
     use_aug_smooth: bool = True,
     use_eigen_smooth: bool = True,
 ) -> np.ndarray:
-    """
-    Return float32 CAM mask in [0,1] with spatial size == input HxW.
-    DO NOT wrap this call in torch.no_grad().
-    """
-    cam, _ = build_cam(model, method=method)
-
-    # pytorch-grad-cam returns input-sized mask already
+    cam = build_cam(model, method)
     mask = cam(
         input_tensor=input_tensor,
         targets=[ClassifierOutputTarget(int(class_index))],
         aug_smooth=bool(use_aug_smooth),
         eigen_smooth=bool(use_eigen_smooth),
-    )[0]
+    )[0]  # (H,W)
 
     mask = np.asarray(mask, dtype=np.float32)
-    # Normalize robustly
     mmin, mmax = float(mask.min()), float(mask.max())
-    if mmax > mmin:
-        mask = (mask - mmin) / (mmax - mmin)
-    else:
-        mask[:] = 0.0
+    mask = (mask - mmin) / (mmax - mmin) if mmax > mmin else np.zeros_like(mask, dtype=np.float32)
 
-    # free hooks
     try:
         cam.activations_and_grads.release()
     except Exception:
         pass
 
-    return mask  # (H, W) in [0,1]
+    return mask
 
-# ------------ rendering helpers ------------
-def overlay_heatmap_on_bgr(
-    base_bgr: np.ndarray,  # uint8 HxWx3 (original crop or full image)
-    cam_mask: np.ndarray,  # float32 HxW (same spatial size as base_bgr when passed)
+# ---------------------------
+# Rendering helpers (RGB only)
+# ---------------------------
+def overlay_heatmap_on_rgb(
+    base_rgb: np.ndarray,  # uint8 HxWx3
+    cam_mask: np.ndarray,  # float32 HxW in [0,1]
     alpha: float = 0.5,
-    colormap: int = cv2.COLORMAP_HOT,
+    cmap_name: str = "hot",
 ) -> np.ndarray:
-    cam_u8 = (np.clip(cam_mask, 0, 1) * 255).astype(np.uint8)
-    if cam_u8.shape[:2] != base_bgr.shape[:2]:
-        cam_u8 = cv2.resize(cam_u8, (base_bgr.shape[1], base_bgr.shape[0]), interpolation=cv2.INTER_LINEAR)
-    heat = cv2.applyColorMap(cam_u8, colormap)
-    out = cv2.addWeighted(heat, float(alpha), base_bgr, 1.0 - float(alpha), 0.0)
-    return out
+    if cam_mask.shape[:2] != base_rgb.shape[:2]:
+        cam_mask = np.array(Image.fromarray((cam_mask * 255).astype(np.uint8)).resize(
+            (base_rgb.shape[1], base_rgb.shape[0]), Image.BILINEAR
+        )) / 255.0
 
-def contours_and_boxes_on_bgr(
-    base_bgr: np.ndarray,
+    cmap = cm.get_cmap(cmap_name)
+    heat_rgba = cmap(cam_mask)  # HxWx4 float in [0,1]
+    heat_rgb  = (heat_rgba[..., :3] * 255).astype(np.uint8)
+
+    blended = (alpha * heat_rgb + (1 - alpha) * base_rgb).clip(0, 255).astype(np.uint8)
+    return blended
+
+def contours_and_boxes_on_rgb(
+    base_rgb: np.ndarray,
     cam_mask: np.ndarray,
     threshold: float = 0.4,
-    color: Tuple[int, int, int] = (0, 0, 255),
+    line_color: Tuple[int,int,int] = (255, 0, 0),
+    box_color: Tuple[int,int,int]  = (255, 0, 0),
     thickness: int = 2,
 ) -> Tuple[np.ndarray, np.ndarray]:
-    cam_u8 = (np.clip(cam_mask, 0, 1) * 255).astype(np.uint8)
-    if cam_u8.shape[:2] != base_bgr.shape[:2]:
-        cam_u8 = cv2.resize(cam_u8, (base_bgr.shape[1], base_bgr.shape[0]), interpolation=cv2.INTER_NEAREST)
-    _, binary = cv2.threshold(cam_u8, int(255 * threshold), 255, cv2.THRESH_BINARY)
-    contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if cam_mask.shape[:2] != base_rgb.shape[:2]:
+        cam_mask = np.array(Image.fromarray((cam_mask * 255).astype(np.uint8)).resize(
+            (base_rgb.shape[1], base_rgb.shape[0]), Image.NEAREST
+        )) / 255.0
 
-    cont_img = base_bgr.copy()
-    box_img  = base_bgr.copy()
+    H, W = base_rgb.shape[:2]
+    binary = (cam_mask >= float(threshold)).astype(np.uint8)
 
-    for cnt in contours:
-        cv2.drawContours(cont_img, [cnt], -1, color, thickness, lineType=cv2.LINE_AA)
-        x, y, w, h = cv2.boundingRect(cnt)
-        cv2.rectangle(box_img, (x, y), (x + w, y + h), color, thickness, lineType=cv2.LINE_AA)
+    # Contours
+    cont_img = Image.fromarray(base_rgb.copy())
+    draw_c = ImageDraw.Draw(cont_img)
+    for cnt in find_contours(binary, level=0.5):
+        # cnt is (N, 2) with (row, col)
+        poly = [(float(xy[1]), float(xy[0])) for xy in cnt]
+        if len(poly) >= 2:
+            draw_c.line(poly, fill=line_color, width=thickness)
 
-    return cont_img, box_img
+    # Bounding boxes via connected components
+    box_img = Image.fromarray(base_rgb.copy())
+    draw_b = ImageDraw.Draw(box_img)
+    lab = label(binary, connectivity=1)
+    for rp in regionprops(lab):
+        minr, minc, maxr, maxc = rp.bbox  # rows, cols
+        draw_b.rectangle([(minc, minr), (maxc, maxr)], outline=box_color, width=thickness)
+
+    return np.array(cont_img), np.array(box_img)
