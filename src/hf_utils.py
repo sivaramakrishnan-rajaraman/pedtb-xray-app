@@ -1,3 +1,4 @@
+# src/hf_utils.py
 from __future__ import annotations
 import os
 from typing import Optional
@@ -11,15 +12,16 @@ def hf_download(
     force_download: bool = False,
 ) -> str:
     """
-    Download a file from Hugging Face Hub and return the local file path.
-    Works for public (token=None) or private (token required) repos.
+    Download a file from Hugging Face Hub, returning a local path in cache.
+    Works with public repos without a token.
     """
+    # Silence symlink warnings on some hosts
     os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
-    local_path = hf_hub_download(
+    path = hf_hub_download(
         repo_id=repo_id,
         filename=filename,
         repo_type=repo_type,
         token=token,
         force_download=force_download,
     )
-    return local_path
+    return path
