@@ -20,11 +20,12 @@ from src.cam_utils import (
 st.set_page_config(page_title="PedTB X-ray Demo", layout="wide")
 
 # HF public repos & filenames
-HF_MODEL_REPO_YOLO = "sivaramakrishhnan/cxr-yolo12s-lung"
-HF_FILENAME_YOLO   = "yolo12s_lung.onnx"   # <-- ensure you uploaded ONNX!
+# ✅ Your actual public repos
+HF_MODEL_REPO_YOLO = st.secrets.get("HF_MODEL_REPO_YOLO", "sivaramakrishhnan/cxr-yolo12s-lung")
+HF_FILENAME_YOLO   = st.secrets.get("HF_FILENAME_YOLO",   "best.onnx")  # <-- default to 'best.onnx'
 
-HF_MODEL_REPO_DPN  = "sivaramakrishhnan/cxr-dpn68-tb-cls"
-HF_FILENAME_DPN    = "dpn68_fold2.ckpt"
+HF_MODEL_REPO_DPN  = st.secrets.get("HF_MODEL_REPO_DPN",  "sivaramakrishhnan/cxr-dpn68-tb-cls")
+HF_FILENAME_DPN    = st.secrets.get("HF_FILENAME_DPN",    "dpn68_fold2.ckpt")
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
