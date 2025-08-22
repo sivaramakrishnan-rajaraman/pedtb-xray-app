@@ -26,7 +26,6 @@ pneumonia-xray-app/
 
 ## 🚀 Run locally
 
-```bash
 # 1) Clone repo
 git clone https://github.com/sivaramakrishnan-rajaraman/pedtb-xray-app.git
 cd pneumonia-xray-app
