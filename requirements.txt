@@ -1,10 +1,11 @@
 # ---- Global pip options (Streamlit Cloud respects these in requirements.txt) ----
-# --no-binary=:all:          # prefer wheels; avoid building with system libs (REMOVE OR COMMENT OUT)
-# --only-binary=numpy,torch,torchvision,timm,onnxruntime,opencv-python-headless,pillow,pytorch-lightning,huggingface_hub,safetensors (REMOVE OR COMMENT OUT)
+# Removed the global --no-binary=:all: and --only-binary=... lines
+# because they were causing the error. Instead, we're using --only-binary
+# on a package-by-package basis.
 
 # ---- App runtime ----
 streamlit>=1.36,<1.49
-numpy<2.0 --only-binary=numpy # Apply --only-binary to individual packages
+numpy<2.0 --only-binary=numpy
 pillow>=10.2 --only-binary=pillow
 
 # Hugging Face hub + safetensors
@@ -20,7 +21,7 @@ pytorch-lightning==2.2.5 --only-binary=pytorch-lightning
 # ONNX inference for YOLO (no OpenCV dependency)
 onnxruntime==1.17.3 --only-binary=onnxruntime
 
-# ✅ Force HEADLESS OpenCV (prevents libGL)
+# ✅ Force HEADLESS OpenCV (prevents libGL issues)
 opencv-python-headless==4.10.0.84 --only-binary=opencv-python-headless
 
 # PyTorch Grad-CAM (pull from git to avoid any packaging quirks)
