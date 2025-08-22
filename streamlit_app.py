@@ -1,6 +1,11 @@
 # streamlit_app.py
+
 from __future__ import annotations
 import os
+# Make sure OpenCV never tries to use a GUI backend
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+os.environ.setdefault("OPENCV_VIDEOIO_PRIORITY_MSMF", "0")
+
 import io
 from typing import Tuple
 
@@ -20,7 +25,6 @@ from huggingface_hub.utils import HfHubHTTPError
 from src.hf_utils import hf_download
 from src.pneumonia_model import PneumoniaModel
 from src.cam_utils import compute_cam_map, discover_target_layer
-
 
 # ------------------ App / page config ------------------
 st.set_page_config(page_title="PedTB X-ray: Detection + Classification + CAM", layout="wide")
