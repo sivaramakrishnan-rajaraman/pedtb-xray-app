@@ -14,8 +14,8 @@ pytorch-lightning==2.2.5
 # ONNX for YOLO fallback
 onnxruntime==1.17.3
 
-# OpenCV (headless only)
-opencv-python-headless==4.10.0.84
-
 # pytorch-grad-cam: pull from GitHub so uv/pip can resolve reliably
 grad-cam @ git+https://github.com/jacobgil/pytorch-grad-cam
+
+# OpenCV (headless only)
+opencv-python-headless==4.10.0.84
