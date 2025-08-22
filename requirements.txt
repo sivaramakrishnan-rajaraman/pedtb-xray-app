@@ -18,4 +18,4 @@ onnxruntime==1.17.3
 opencv-python-headless==4.10.0.84
 
 # pytorch-grad-cam: pull from GitHub so uv/pip can resolve reliably
-pytorch-grad-cam @ git+https://github.com/jacobgil/pytorch-grad-cam
+grad-cam @ git+https://github.com/jacobgil/pytorch-grad-cam
