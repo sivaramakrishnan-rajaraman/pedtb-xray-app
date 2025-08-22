@@ -1,5 +1,4 @@
 # src/hf_utils.py
-
 from __future__ import annotations
 import os
 from typing import Optional
@@ -12,10 +11,7 @@ def hf_download(
     token: Optional[str] = None,
     force_download: bool = False,
 ) -> str:
-    """
-    Download a file from Hugging Face Hub using the local HF cache.
-    Returns the local filesystem path.
-    """
+    """Download a file from Hugging Face Hub to the local cache and return its path."""
     os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
     return hf_hub_download(
         repo_id=repo_id,
