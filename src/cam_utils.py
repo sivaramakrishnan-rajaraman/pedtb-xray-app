@@ -4,6 +4,7 @@ from typing import Tuple, Optional
 import numpy as np
 import torch
 import torch.nn as nn
+import cv2
 
 # TorchCAM (CPU-friendly; no system libs needed)
 from torchcam.methods import GradCAM, GradCAMpp, LayerCAM, XGradCAM, SmoothGradCAMpp
