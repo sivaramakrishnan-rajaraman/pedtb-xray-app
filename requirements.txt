@@ -19,7 +19,7 @@ pytorch-lightning==2.2.5
 ultralytics==8.3.30
 
 # OpenCV (headless ONLY — prevents libGL issues)
-opencv-python-headless==4.7.0.72
+opencv-python-headless>=4.9.0
 
 # CAM (we replaced pytorch-grad-cam with torchcam)
 torchcam==0.4.0
