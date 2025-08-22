@@ -1,23 +1,23 @@
-# Streamlit UI
+# UI
 streamlit>=1.36,<1.49
 
-# Hub + safetensors
+# HF hub + safetensors
 huggingface_hub>=0.23,<0.35
 safetensors>=0.4.3
 
-# Core DL stack (CPU wheels available on PyPI for Py3.11)
+# Core DL stack (CPU wheels available for Py3.11)
 torch==2.2.1
 torchvision==0.17.1
 timm==1.0.19
 pytorch-lightning==2.2.5
 
 # YOLO
-ultralytics>=8.2,<8.4
+ultralytics==8.3.30
 
-# CAM lib (PyPI builds support Py3.11)
-pytorch-grad-cam==1.5.1
+# CAM lib (replace pytorch-grad-cam with torchcam)
+torchcam==0.4.0
 
-# CV/ML utilities
+# CV/ML utils
 albumentations==1.4.4
 opencv-python-headless==4.9.0.80
 numpy==1.26.4
