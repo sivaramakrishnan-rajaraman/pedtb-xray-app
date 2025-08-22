@@ -1,3 +1,6 @@
+# Grad-CAM (PyTorch) – official repo; works with headless OpenCV
+pytorch-grad-cam @ git+https://github.com/jacobgil/pytorch-grad-cam@v1.5.1
+
 # Streamlit & base
 streamlit>=1.36,<1.49
 numpy<2.0
@@ -21,5 +24,4 @@ onnxruntime==1.17.3
 # Headless OpenCV only (prevents libGL errors)
 opencv-python-headless==4.10.0.84
 
-# Grad-CAM (PyTorch) – official repo; works with headless OpenCV
-pytorch-grad-cam @ git+https://github.com/jacobgil/pytorch-grad-cam@v1.5.1
+
