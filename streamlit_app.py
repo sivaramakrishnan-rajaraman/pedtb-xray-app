@@ -161,9 +161,12 @@ cam_mask_crop = np.array(
 ) / 255.0
 
 heat_on_crop = overlay_heatmap_on_rgb(crop_rgb, cam_mask_crop, alpha=cam_alpha, cmap_name="hot")
-cont_on_crop, box_on_crop = contours_and_boxes_on_rgb(
-    crop_rgb, cam_mask_crop, threshold=cam_thr, line_color=(255,0,0), box_color=(255,0,0), thickness=3
-)
+cont_on_crop, box_on_crop = contours_and_boxes_on_rgb(crop_rgb, cam_mask_crop, threshold=cam_thr, line_color=(255,0,0), box_color=(255,0,0), thickness=3)
+
+# heat_on_crop = overlay_heatmap_on_rgb(crop_rgb, cam_mask_crop, alpha=cam_alpha, cmap_name="hot")
+# cont_on_crop, box_on_crop = contours_and_boxes_on_rgb(
+#     crop_rgb, cam_mask_crop, threshold=cam_thr, line_color=(255,0,0), box_color=(255,0,0), thickness=3
+# )
 
 # Paste these back to the full image (for context)
 full_heat = orig_rgb.copy()
