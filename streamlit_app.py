@@ -13,7 +13,13 @@ import torch.nn.functional as F
 
 from src.hf_utils import hf_download
 from src.pneumonia_model import PneumoniaModel
-from src.cam_utils import compute_cam_map, heatmap_overlay, contours_and_bboxes, draw_bboxes
+from src.cam_utils import (
+    compute_cam_map,
+    heatmap_overlay,
+    contours_and_bboxes,
+    draw_bboxes,
+)
+
 from src.yolo_onnx import YOLOOnnx
 
 # -----------------------------
