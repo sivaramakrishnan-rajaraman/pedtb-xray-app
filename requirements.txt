@@ -26,4 +26,4 @@ opencv-python-headless==4.10.0.84
 # PyTorch Grad-CAM (pull from git to avoid any packaging quirks)
 # NOTE: This package *imports* cv2 but does NOT hard-require opencv-python;
 # our headless build above satisfies it.
-grad-cam @ git+https://github.com/jacobgil/pytorch-grad-cam@v1.5.0
+grad-cam @ git+https://github.com/jacobgil/pytorch-grad-cam
