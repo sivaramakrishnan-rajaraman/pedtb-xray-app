@@ -1,22 +1,25 @@
-# Streamlit & core
+# Streamlit & base
 streamlit>=1.36,<1.49
+numpy<2.0
+pillow>=10.2
+matplotlib>=3.8
+scikit-image>=0.22
+scikit-learn>=1.5
+
+# HF and safetensors
 huggingface_hub>=0.23,<0.35
 safetensors>=0.4.3
-Pillow>=10.0
-numpy<2.0
 
-# Torch stack (CPU wheels are fine on Streamlit Cloud)
+# Torch stack pinned for CPU on Streamlit Cloud
 torch==2.2.1
 torchvision==0.17.1
 timm==1.0.19
 pytorch-lightning==2.2.5
 
-# ONNX for YOLO fallback (we use only ONNX for detector)
+# Inference and CAM
 onnxruntime==1.17.3
+# Headless OpenCV only (prevents libGL errors)
+opencv-python-headless==4.10.0.84
 
-# Visualization and image ops (no OpenCV)
-matplotlib>=3.8
-scikit-image>=0.24
-
-# pytorch-grad-cam (pin to a known commit/tag so uv can resolve)
-grad-cam @ git+https://github.com/jacobgil/pytorch-grad-cam
+# Grad-CAM (PyTorch) – official repo; works with headless OpenCV
+pytorch-grad-cam @ git+https://github.com/jacobgil/pytorch-grad-cam@v1.5.1
