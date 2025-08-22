@@ -23,7 +23,6 @@ pneumonia-xray-app/
 ├─ yolo_utils.py # YOLO detection + crop utilities
 ├─ model.py # PneumoniaModel (DPN-68 compatible)
 └─ cam_utils.py # Grad-CAM utilities
-```bash
 
 ## 🚀 Run locally
 
