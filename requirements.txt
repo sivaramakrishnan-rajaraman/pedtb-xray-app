@@ -1,7 +1,6 @@
 # ---- Global pip options (Streamlit Cloud respects these in requirements.txt) ----
 --no-binary=:all:          # prefer wheels; avoid building with system libs
 --only-binary=numpy,torch,torchvision,timm,onnxruntime,opencv-python-headless,pillow,pytorch-lightning,huggingface_hub,safetensors
---disable-pip-version-check
 
 # ---- App runtime ----
 streamlit>=1.36,<1.49
