@@ -1,7 +1,7 @@
-# 🫁 Chest X-ray Pneumonia — YOLO→DPN68→Grad-CAM (Streamlit)
+# 🫁 Explainable Pediatric Chest X-ray Classifier
 
 **Live app:** *(update this link after deploying)*  
-[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://YOUR-APP-NAME.streamlit.app/)
+[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://sivaramakrishhnan.streamlit.app/)
 
 This app demonstrates a full pipeline on CXR images:
 
@@ -15,7 +15,7 @@ Weights are hosted on **Hugging Face Hub**:
 - Classifier  : `sivaramakrishhnan/cxr-dpn68-tb-cls` → `dpn68_fold2.ckpt`
 
 ## 🧱 Repository Structure
----
+```bash
 pneumonia-xray-app/
 ├─ streamlit_app.py # Main Streamlit entry point
 ├─ requirements.txt
