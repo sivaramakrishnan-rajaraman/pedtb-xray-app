@@ -1,103 +1,107 @@
+# src/cam_utils.py
 from __future__ import annotations
-from typing import Tuple, Optional
-import numpy as np
-import cv2
+import math
+from typing import Optional, Tuple
+
 import torch
 import torch.nn as nn
-from pytorch_grad_cam import (
-    GradCAM, ScoreCAM, GradCAMPlusPlus, AblationCAM,
-    XGradCAM, LayerCAM, FullGrad, HiResCAM, EigenCAM, EigenGradCAM
-)
-from pytorch_grad_cam.utils.model_targets import ClassifierOutputTarget
+import torch.nn.functional as F
 
-CAM_METHODS = {
-    "gradcam": GradCAM,
-    "gradcam++": GradCAMPlusPlus,
-    "xgradcam": XGradCAM,
-    "layercam": LayerCAM,
-    "scorecam": ScoreCAM,
-    "ablationcam": AblationCAM,
-    "fullgrad": FullGrad,
-    "eigencam": EigenCAM,
-    "eigengradcam": EigenGradCAM,
-    "hirescam": HiResCAM,
-}
+# torchcam provides GradCAM & SmoothGradCAMpp
+from torchcam.methods import GradCAM, SmoothGradCAMpp
 
-def get_target_layer(model: nn.Module) -> nn.Module:
-    # Prefer model.cam_target if present.
+
+# --------- target-layer resolution (works with our PneumoniaModel) ---------
+def discover_target_layer(model: nn.Module) -> nn.Module:
+    """
+    Priority order:
+      1) model.cam_target if present
+      2) model.post3x3 if it is a Conv2d (some backbones get an extra 3x3 conv)
+      3) last Conv2d found in model.backbone
+    """
+    # 1) Explicit CAM tap
     if hasattr(model, "cam_target") and isinstance(model.cam_target, nn.Module):
         return model.cam_target
-    # Fallback: last Conv2d
-    last = None
-    for m in model.modules():
+
+    # 2) Post 3x3 conv
+    if hasattr(model, "post3x3") and isinstance(model.post3x3, nn.Conv2d):
+        return model.post3x3
+
+    # 3) Last Conv2d inside backbone
+    if hasattr(model, "backbone"):
+        last_conv = None
+        for _, m in model.backbone.named_modules():
+            if isinstance(m, nn.Conv2d):
+                last_conv = m
+        if last_conv is not None:
+            return last_conv
+
+    # 4) Fallback: search whole model
+    last_conv = None
+    for _, m in model.named_modules():
         if isinstance(m, nn.Conv2d):
-            last = m
-    if last is None:
-        raise RuntimeError("No Conv2d layer found for CAM target.")
-    return last
+            last_conv = m
+    if last_conv is None:
+        raise RuntimeError("No Conv2d found to use as a CAM target layer.")
+    return last_conv
 
-def cam_mask(
-    model: nn.Module,
-    image_tensor: torch.Tensor,            # 1x3xHxW (normalized)
-    method: str = "gradcam",
-    class_idx: int = 1,
-    aug_smooth: bool = True,
-    eigen_smooth: bool = True,
-) -> np.ndarray:
-    """
-    Returns a float32 mask in [0,1] at the model's last feature map resolution.
-    """
-    target_layer = get_target_layer(model)
-    CAMClass = CAM_METHODS[method.lower()]
-    with CAMClass(model=model, target_layers=[target_layer], reshape_transform=None) as cam:
-        if method.lower() == "eigencam":
-            m = cam(input_tensor=image_tensor)[0]
-        else:
-            m = cam(
-                input_tensor=image_tensor,
-                targets=[ClassifierOutputTarget(class_idx)],
-                aug_smooth=aug_smooth,
-                eigen_smooth=eigen_smooth
-            )[0]
-    m = np.asarray(m, dtype=np.float32)
-    # normalize
-    vmin, vmax = float(m.min()), float(m.max())
-    if vmax > vmin:
-        m = (m - vmin) / (vmax - vmin)
+
+# --------- builders for torchcam extractors ---------
+def build_cam_extractor(model: nn.Module, target_layer: nn.Module, method: str = "gradcam"):
+    m = method.lower().strip()
+    if m in ("gradcam", "grad-cam"):
+        return GradCAM(model, target_layer=target_layer)
+    elif m in ("gradcam++", "smoothgradcampp", "smooth-grad-cam++"):
+        return SmoothGradCAMpp(model, target_layer=target_layer)
     else:
-        m[:] = 0.0
-    return m
+        raise ValueError(f"Unsupported CAM method for torchcam: {method}. "
+                         f"Use 'gradcam' or 'gradcam++'.")
 
-def overlay_and_shapes(
-    orig_bgr: np.ndarray,
-    mask: np.ndarray,         # [H',W'] or resized to [H,W] already
-    alpha: float = 0.5,
-    threshold: float = 0.4,
-    contour_color=(0,0,255),
-    contour_thickness=2,
-    line_type=cv2.LINE_AA
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+
+# --------- main API used by the app ---------
+@torch.no_grad()
+def compute_cam_map(
+    model: nn.Module,
+    input_tensor: torch.Tensor,     # (1,3,H,W) preprocessed
+    method: str = "gradcam",
+    target_layer: Optional[nn.Module] = None,
+    class_idx: int = 1,             # abnormal class index
+    upsample_to: Optional[Tuple[int,int]] = None,  # (H0,W0) original image size
+) -> torch.Tensor:
     """
-    Returns (heat_overlay_bgr, contours_bgr, bboxes_bgr) at original resolution.
+    Runs forward pass, extracts a CAM (H,W), returns float32 map in [0,1].
+    - Uses torchcam internals; no manual backward/grad plumbing required.
+    - Returns a single-channel heatmap matching 'upsample_to' if provided.
     """
-    H, W = orig_bgr.shape[:2]
-    if mask.shape[:2] != (H, W):
-        mask = cv2.resize(mask, (W, H), interpolation=cv2.INTER_NEAREST)
-    mask_u8 = (np.clip(mask, 0, 1) * 255).astype(np.uint8)
-    heat = cv2.applyColorMap(mask_u8, cv2.COLORMAP_JET)
-    overlay = cv2.addWeighted(heat, float(alpha), orig_bgr, 1.0-float(alpha), 0.0)
+    model.eval()
 
-    thr = int(255 * float(threshold))
-    _, binary = cv2.threshold(mask_u8, thr, 255, cv2.THRESH_BINARY)
-    contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if target_layer is None:
+        target_layer = discover_target_layer(model)
 
-    cont_img = orig_bgr.copy()
-    if contours:
-        cv2.drawContours(cont_img, contours, -1, contour_color, contour_thickness, lineType=line_type)
+    cam_extractor = build_cam_extractor(model, target_layer, method=method)
 
-    box_img = orig_bgr.copy()
-    for cnt in contours or []:
-        x, y, w, h = cv2.boundingRect(cnt)
-        cv2.rectangle(box_img, (x, y), (x+w, y+h), contour_color, contour_thickness, lineType=line_type)
+    # forward pass (no autocast here; CPU on Streamlit Cloud)
+    scores = model(input_tensor.float())  # (1,C)
 
-    return overlay, cont_img, box_img
+    # torchcam API: returns a list of CAMs (one per target layer); we choose first
+    # It internally does backward on scores[:, class_idx]
+    cams = cam_extractor(class_idx, scores)
+    if isinstance(cams, (list, tuple)):
+        cam = cams[0]
+    else:
+        cam = cams
+
+    # cam is 2D (H,W) tensor; normalize to [0,1]
+    cam = cam.detach()
+    cam = cam - cam.min()
+    denom = cam.max().clamp(min=1e-8)
+    cam = cam / denom
+
+    # upsample if needed
+    if upsample_to is not None:
+        H0, W0 = int(upsample_to[0]), int(upsample_to[1])
+        cam = cam.unsqueeze(0).unsqueeze(0)           # (1,1,h,w)
+        cam = F.interpolate(cam, size=(H0, W0), mode="bilinear", align_corners=False)
+        cam = cam.squeeze(0).squeeze(0).contiguous()  # (H0,W0)
+
+    return cam.cpu().float()
