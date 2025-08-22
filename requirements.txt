@@ -5,17 +5,18 @@ safetensors>=0.4.3
 Pillow>=10.0
 numpy<2.0
 
-# Torch stack (CPU build is fine on Streamlit Cloud)
+# Torch stack (CPU wheels are fine on Streamlit Cloud)
 torch==2.2.1
 torchvision==0.17.1
 timm==1.0.19
 pytorch-lightning==2.2.5
 
-# ONNX for YOLO fallback
+# ONNX for YOLO fallback (we use only ONNX for detector)
 onnxruntime==1.17.3
 
-# pytorch-grad-cam: pull from GitHub so uv/pip can resolve reliably
-grad-cam @ git+https://github.com/jacobgil/pytorch-grad-cam
+# Visualization and image ops (no OpenCV)
+matplotlib>=3.8
+scikit-image>=0.24
 
-# OpenCV (headless only)
-opencv-python-headless==4.10.0.84
+# pytorch-grad-cam (pin to a known commit/tag so uv can resolve)
+grad-cam @ git+https://github.com/jacobgil/pytorch-grad-cam
