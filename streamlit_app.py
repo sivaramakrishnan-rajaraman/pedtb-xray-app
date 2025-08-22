@@ -16,7 +16,8 @@ from huggingface_hub.utils import HfHubHTTPError
 from src.hf_utils import hf_download
 from src.yolo_utils import detect_lungs, crop_with_box, draw_box
 from src.model import PneumoniaModel
-from src.cam_utils import cam_mask, overlay_and_shapes, CAM_METHODS
+# new CAM utilities backed by torchcam
+from src.cam_utils import compute_cam_map, discover_target_layer
 
 # ------------------ App Config ------------------
 st.set_page_config(
