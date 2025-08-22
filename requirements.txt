@@ -21,6 +21,10 @@ pytorch-lightning==2.2.5 --only-binary=pytorch-lightning
 # ONNX inference for YOLO (no OpenCV dependency)
 onnxruntime==1.17.3 --only-binary=onnxruntime
 
+# Ultralytics (added)
+# Use a specific version or range if needed. Ultralytics requires a few other dependencies, which will be installed automatically unless explicitly excluded with --no-deps.
+ultralytics==8.2.39 --only-binary=ultralytics # Assuming version 8.2.39 is the current and compatible version.
+
 # ✅ Force HEADLESS OpenCV (prevents libGL issues)
 opencv-python-headless==4.10.0.84 --only-binary=opencv-python-headless
 
