@@ -5,9 +5,9 @@
 
 This app demonstrates a full pipeline on CXR images:
 
-1. **YOLO12s** (fine-tuned) to detect the **pediatric lung** region and **Crop** the detected lungs.
-3. **DPN-68** (fine-tuned) to classify **Normal** vs **Tuberculosis**.
-4. **XAI** visualizations (heatmap, contours, bboxes) over the cropped lungs.
+1. **YOLO12s** (fine-tuned) to detect the **pediatric lung** region and **crop** the detected lungs.
+3. **DPN-68** (fine-tuned) to classify **pediatric** CXRs as showing **Normal** lungs or with **Tuberculosis-related** manifestations.
+4. **XAI** visualizations (heatmap, contours, bboxes) superimposed on CXRs to explain the **learned behavior**. 
 
 Weights are hosted on **Hugging Face Hub**:
 
