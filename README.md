@@ -5,8 +5,7 @@
 
 This app demonstrates a full pipeline on CXR images:
 
-1. **YOLO12s** (fine-tuned) to detect the **pediatric lung** region.
-2. **Crop** the detected lungs.
+1. **YOLO12s** (fine-tuned) to detect the **pediatric lung** region and **Crop** the detected lungs.
 3. **DPN-68** (fine-tuned) to classify **Normal** vs **Tuberculosis**.
 4. **XAI** visualizations (heatmap, contours, bboxes) over the cropped lungs.
 
