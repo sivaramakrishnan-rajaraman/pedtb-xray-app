@@ -1,5 +1,5 @@
 # Grad-CAM (PyTorch) – official repo; works with headless OpenCV
-grad-cam @ git+https://github.com/jacobgil/pytorch-grad-cam@v1.5.1
+grad-cam @ git+https://github.com/jacobgil/pytorch-grad-cam
 
 # Streamlit & base
 streamlit>=1.36,<1.49
