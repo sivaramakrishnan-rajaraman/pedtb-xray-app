@@ -1,115 +1,158 @@
 # src/cam_utils.py
-
 from __future__ import annotations
-from typing import Optional, Tuple, List
+from typing import Tuple, Optional
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from torchcam.methods import GradCAM, SmoothGradCAMpp
-from skimage.measure import label, regionprops
-from PIL import Image, ImageDraw
-import matplotlib.cm as cm
+import cv2
 
-__all__ = [
-    "discover_target_layer",
-    "build_cam_extractor",
-    "compute_cam_map",
-    "heatmap_overlay",
-    "contours_and_bboxes",
-    "draw_bboxes",
-]
+# TorchCAM (CPU-friendly; no system libs needed)
+from torchcam.methods import GradCAM, GradCAMpp, LayerCAM, XGradCAM, SmoothGradCAMpp
 
-def discover_target_layer(model: nn.Module) -> nn.Module:
-    # Prefer explicit tap
-    if hasattr(model, "cam_target") and isinstance(model.cam_target, nn.Module):
-        return model.cam_target
-    # Then the 3x3 we added
-    if hasattr(model, "post3x3") and isinstance(model.post3x3, nn.Conv2d):
-        return model.post3x3
-    # Else last conv in backbone
-    if hasattr(model, "backbone"):
-        last = None
-        for _, m in model.backbone.named_modules():
-            if isinstance(m, nn.Conv2d):
-                last = m
-        if last is not None:
-            return last
-    # Else last conv anywhere
+# ---------------------------
+# Target layer discovery
+# ---------------------------
+def _find_last_conv(module: nn.Module) -> Optional[nn.Conv2d]:
     last = None
-    for _, m in model.named_modules():
+    for _, m in module.named_modules():
         if isinstance(m, nn.Conv2d):
             last = m
-    if last is None:
-        raise RuntimeError("No Conv2d layer found for CAM.")
     return last
 
-def build_cam_extractor(model: nn.Module, target_layer: nn.Module, method: str = "gradcam"):
-    m = method.lower().strip()
-    if m in ("gradcam", "grad-cam"):
-        return GradCAM(model, target_layer=target_layer)
-    elif m in ("gradcam++", "smoothgradcampp", "smooth-grad-cam++"):
-        return SmoothGradCAMpp(model, target_layer=target_layer)
-    else:
-        raise ValueError(f"Unsupported CAM method '{method}'. Use 'gradcam' or 'gradcam++'.")
 
-@torch.no_grad()
+def discover_target_layer(model: nn.Module) -> nn.Module:
+    """
+    Prefer model.cam_target if the model exposes one (our PneumoniaModel does).
+    Fallback to last Conv2d in the backbone.
+    """
+    if hasattr(model, "cam_target") and isinstance(model.cam_target, nn.Module):
+        return model.cam_target
+    if hasattr(model, "backbone"):
+        last = _find_last_conv(model.backbone)
+        if last is not None:
+            return last
+    # last resort: scan the whole model
+    last = _find_last_conv(model)
+    if last is None:
+        raise RuntimeError("No Conv2d layer found for CAM target.")
+    return last
+
+
+# ---------------------------
+# Build the CAM extractor
+# ---------------------------
+def build_cam_extractor(model: nn.Module, target_layer: nn.Module, method: str = "gradcam"):
+    method = (method or "gradcam").lower()
+    if method in ("gradcam", "gc"):
+        return GradCAM(model, target_layer)
+    if method in ("gradcam++", "gcpp", "++"):
+        return GradCAMpp(model, target_layer)
+    if method in ("layercam", "lc"):
+        return LayerCAM(model, target_layer)
+    if method in ("xgradcam", "xgc"):
+        return XGradCAM(model, target_layer)
+    if method in ("smoothgradcampp", "sgcpp", "smooth++"):
+        return SmoothGradCAMpp(model, target_layer)
+    # default
+    return GradCAM(model, target_layer)
+
+# ---------------------------
+# Main: compute normalized CAM map
+# ---------------------------
 def compute_cam_map(
     model: nn.Module,
-    input_tensor: torch.Tensor,     # (1,3,H,W) normalized
+    input_tensor: torch.Tensor,        # shape (1, 3, H, W) on the correct device
     method: str = "gradcam",
     class_idx: int = 1,
-    target_layer: Optional[nn.Module] = None,
-    upsample_to: Optional[Tuple[int, int]] = None,
+    use_autocast: bool = False,
 ) -> np.ndarray:
+    """
+    Returns a float32 CAM map in [0,1] at the network's feature resolution.
+    NOTE: This function *enables grad* internally. Do NOT wrap it in torch.no_grad().
+    """
+    if input_tensor.ndim != 4 or input_tensor.size(0) != 1:
+        raise ValueError("input_tensor must be batched (1, C, H, W)")
+
+    device = input_tensor.device
     model.eval()
-    if target_layer is None:
-        target_layer = discover_target_layer(model)
+
+    # Ensure all params can carry grads for hooks/backprop (eval mode is fine)
+    for p in model.parameters():
+        p.requires_grad_(True)
+
+    target_layer = discover_target_layer(model)
     cam_extractor = build_cam_extractor(model, target_layer, method=method)
 
-    scores = model(input_tensor.float())
-    cams = cam_extractor(class_idx, scores)   # returns list[tensor] or tensor
-    cam = cams[0] if isinstance(cams, (list, tuple)) else cams
+    # Forward with grad enabled (this is the key fix)
+    with torch.enable_grad():
+        input_tensor = input_tensor.float()
+        if use_autocast and device.type == "cuda":
+            with torch.cuda.amp.autocast():
+                scores = model(input_tensor)
+        else:
+            scores = model(input_tensor)
+
+        # torchcam API: call extractor with (class_idx, scores)
+        cams = cam_extractor(class_idx, scores)
+        cam = cams[0] if isinstance(cams, (list, tuple)) else cams  # (Hc, Wc) torch.Tensor
+
+    # Normalize to [0,1]
+    cam = cam.detach().cpu().float().numpy()
     cam = cam - cam.min()
-    cam = cam / cam.max().clamp(min=1e-8)
+    if cam.max() > 0:
+        cam = cam / cam.max()
+    else:
+        cam = np.zeros_like(cam, dtype=np.float32)
 
-    if upsample_to is not None:
-        H0, W0 = int(upsample_to[0]), int(upsample_to[1])
-        cam = cam.unsqueeze(0).unsqueeze(0)  # 1x1xhxw
-        cam = F.interpolate(cam, size=(H0, W0), mode="bilinear", align_corners=False)
-        cam = cam.squeeze(0).squeeze(0)
-    return cam.cpu().float().numpy()
+    # Clean hooks if available (defensive)
+    try:
+        cam_extractor.remove_hooks()
+    except Exception:
+        pass
 
+    return cam.astype(np.float32)
+
+# ---------------------------
+# Rendering helpers
+# ---------------------------
 def heatmap_overlay(
-    rgb: Image.Image,
-    cam01: np.ndarray,
+    cam_map: np.ndarray,      # float [0,1], (Hc, Wc)
+    base_bgr: np.ndarray,     # uint8 (H, W, 3) in BGR
     alpha: float = 0.5,
-    cmap_name: str = "jet"
-) -> Image.Image:
-    """Blend a [0,1] CAM with an RGB PIL image."""
-    cmap = cm.get_cmap(cmap_name)
-    heat = (cmap(cam01)[:, :, :3] * 255).astype(np.uint8)  # HxWx3
-    heat_img = Image.fromarray(heat).resize(rgb.size, Image.BILINEAR)
-    return Image.blend(rgb.convert("RGB"), heat_img, alpha=alpha)
+) -> np.ndarray:
+    """Resize CAM to image, colorize, and alpha-blend."""
+    H, W = base_bgr.shape[:2]
+    cam_u8 = np.uint8(np.clip(cam_map, 0, 1) * 255)
+    cam_u8 = cv2.resize(cam_u8, (W, H), interpolation=cv2.INTER_LINEAR)
 
-def contours_and_bboxes(cam01: np.ndarray, thr: float = 0.4) -> List[Tuple[int,int,int,int]]:
-    """Axis-aligned bboxes from thresholded CAM (uses skimage)."""
-    mask = (cam01 >= float(thr)).astype(np.uint8)
-    lab = label(mask, connectivity=1)
-    boxes = []
-    for r in regionprops(lab):
-        minr, minc, maxr, maxc = r.bbox
-        boxes.append((int(minc), int(minr), int(maxc), int(maxr)))  # x1,y1,x2,y2
-    return boxes
+    heat = cv2.applyColorMap(cam_u8, cv2.COLORMAP_JET)
+    overlay = cv2.addWeighted(heat, float(alpha), base_bgr, 1.0 - float(alpha), 0.0)
+    return overlay
 
-def draw_bboxes(
-    rgb: Image.Image,
-    boxes: List[Tuple[int,int,int,int]],
-    color: Tuple[int,int,int]=(255,0,0),
-    width: int = 3
-) -> Image.Image:
-    out = rgb.copy()
-    dr = ImageDraw.Draw(out)
-    for (x1,y1,x2,y2) in boxes:
-        dr.rectangle([x1,y1,x2,y2], outline=color, width=width)
-    return out
+
+def contours_and_boxes(
+    cam_map: np.ndarray,      # float [0,1], (Hc, Wc)
+    base_bgr: np.ndarray,     # uint8 (H, W, 3)
+    threshold: float = 0.4,
+    color: Tuple[int, int, int] = (0, 0, 255),
+    thickness: int = 2,
+    line_type: int = cv2.LINE_AA,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Draw contours and tight bounding boxes for CAM≥threshold."""
+    H, W = base_bgr.shape[:2]
+    cam_u8 = np.uint8(np.clip(cam_map, 0, 1) * 255)
+    cam_u8 = cv2.resize(cam_u8, (W, H), interpolation=cv2.INTER_NEAREST)
+
+    thr = int(255 * float(threshold))
+    _, binary = cv2.threshold(cam_u8, thr, 255, cv2.THRESH_BINARY)
+    contours, _ = cv2.findContours(binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    cont_img = base_bgr.copy()
+    box_img  = base_bgr.copy()
+
+    for cnt in contours:
+        cv2.drawContours(cont_img, [cnt], -1, color, thickness, lineType=line_type)
+        x, y, w, h = cv2.boundingRect(cnt)
+        cv2.rectangle(box_img, (x, y), (x + w, y + h), color, thickness, lineType=line_type)
+
+    return cont_img, box_img
