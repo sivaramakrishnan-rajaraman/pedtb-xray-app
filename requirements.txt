@@ -1,27 +1,33 @@
 # UI
 streamlit>=1.36,<1.49
 
-# Hugging Face + safetensors
+# HF + safetensors
 huggingface_hub>=0.23,<0.35
 safetensors>=0.4.3
 
-# Core DL stack (CPU wheels for Py3.11)
-torch==2.2.1
-torchvision==0.17.1
+# -------- CPU PyTorch wheels --------
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.2.1+cpu
+torchvision==0.17.1+cpu
+# ------------------------------------
+
+# DL libs
 timm==1.0.19
 pytorch-lightning==2.2.5
 
-# YOLO
+# YOLO (works fine on CPU)
 ultralytics==8.3.30
 
-# CAM library (replace pytorch-grad-cam with torchcam)
+# OpenCV (headless ONLY — prevents libGL issues)
+opencv-python-headless==4.7.0.72
+
+# CAM (we replaced pytorch-grad-cam with torchcam)
 torchcam==0.4.0
 
-# CV/ML utils
+# CV / ML utils
 albumentations==1.4.4
-opencv-python-headless==4.9.0.80
-numpy==1.26.4
-Pillow>=10.2
 scikit-image==0.22.0
 scikit-learn==1.3.2
+numpy==1.26.4
+Pillow>=10.2
 matplotlib==3.8.4
