@@ -1,0 +1,14 @@
+# python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.ipynb_checkpoints/
+
+# streamlit cache
+.streamlit/cache/
+.streamlit/secrets.toml
+
+# local artifacts
+tmp/
