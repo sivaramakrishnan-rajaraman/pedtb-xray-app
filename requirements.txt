@@ -1,33 +1,28 @@
-# UI
+# --- Web UI ---
 streamlit>=1.36,<1.49
 
-# HF + safetensors
+# --- Hugging Face + safetensors ---
 huggingface_hub>=0.23,<0.35
 safetensors>=0.4.3
 
-# -------- CPU PyTorch wheels --------
+# --- CPU PyTorch wheels (Streamlit Cloud friendly) ---
 --extra-index-url https://download.pytorch.org/whl/cpu
 torch==2.2.1+cpu
 torchvision==0.17.1+cpu
-# ------------------------------------
 
-# DL libs
+# --- Vision backbones / Lightning ---
 timm==1.0.19
 pytorch-lightning==2.2.5
 
-# YOLO (works fine on CPU)
-ultralytics==8.3.30
-
-# OpenCV (headless ONLY — prevents libGL issues)
-opencv-python-headless>=4.9.0
-
-# CAM (we replaced pytorch-grad-cam with torchcam)
+# --- CAM (no OpenCV) ---
 torchcam==0.4.0
 
-# CV / ML utils
-albumentations==1.4.4
+# --- Image / array / plotting ---
+Pillow>=10.2
+numpy
+matplotlib==3.8.4
 scikit-image==0.22.0
 scikit-learn==1.3.2
-numpy
-Pillow>=10.2
-matplotlib==3.8.4
+
+# --- YOLO detector inference (no Ultralytics, no OpenCV) ---
+onnxruntime==1.17.1
