@@ -1,196 +1,178 @@
 # streamlit_app.py
 from __future__ import annotations
-import os
-from typing import Tuple, Optional
-
-import streamlit as st
+import io
+from typing import Tuple
 import numpy as np
-from PIL import Image, ImageDraw
-
+import streamlit as st
+from PIL import Image
+import cv2
 import torch
-from torchvision import transforms
 
 from src.hf_utils import hf_download
-from src.pneumonia_model import PneumoniaModel
+from src.yolo_onnx import YOLOOnnx
 from src.cam_utils import (
     compute_cam_mask,
-    overlay_heatmap_on_rgb,
-    contours_and_boxes_on_rgb,  # use this one in the app
+    overlay_heatmap_on_bgr,
+    contours_and_boxes_on_bgr,
 )
-from src.yolo_onnx import YOLOOnnx
 
-# -------------------------------
-# Page config
-# -------------------------------
-st.set_page_config(page_title="Pediatric TB X-ray App", layout="wide")
+# ======= App config =======
+st.set_page_config(page_title="PedTB X-ray Demo", layout="wide")
+
+# HF public repos & filenames
+HF_MODEL_REPO_YOLO = "sivaramakrishhnan/cxr-yolo12s-lung"
+HF_FILENAME_YOLO   = "yolo12s_lung.onnx"   # <-- ensure you uploaded ONNX!
+
+HF_MODEL_REPO_DPN  = "sivaramakrishhnan/cxr-dpn68-tb-cls"
+HF_FILENAME_DPN    = "dpn68_fold2.ckpt"
 
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
-# Hugging Face
-HF_TOKEN = st.secrets.get("HF_TOKEN", None)  # optional (public repos don't need it)
+# Your PneumoniaModel (already compatible with the ckpt)
+from src.pneumonia_model import PneumoniaModel
 
-# Your repos / filenames (edit if you used different names)
-REPO_YOLO = "sivaramakrishhnan/cxr-yolo12s-lung"
-YOLO_ONNX = "yolo12s_lung_nms.onnx"  # must be ONNX with nms=True
+# Preprocess for classifier (same normalization used in training)
+def preprocess_cxr_rgb_to_tensor(rgb: np.ndarray, size: int = 224) -> torch.Tensor:
+    img = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)  # just to use cv2 resize (either space OK)
+    img = cv2.resize(img, (size, size), interpolation=cv2.INTER_AREA)
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    img = img.astype(np.float32) / 255.0
+    mean = np.array([0.485,0.456,0.406], dtype=np.float32)
+    std  = np.array([0.229,0.224,0.225], dtype=np.float32)
+    img = (img - mean) / std
+    img = img.transpose(2,0,1)  # CHW
+    return torch.from_numpy(img)[None]  # (1,3,H,W)
 
-REPO_DPN  = "sivaramakrishhnan/cxr-dpn68-tb-cls"
-DPN_CKPT  = "dpn68_fold2.ckpt"
+@st.cache_resource(show_spinner="Downloading YOLO ONNX from Hugging Face…")
+def get_yolo_onnx():
+    onnx_path = hf_download(HF_MODEL_REPO_YOLO, HF_FILENAME_YOLO, repo_type="model")
+    return YOLOOnnx(onnx_path, input_size=640)
 
-# Classifier config
-HCLS = {
-    "model": "dpn68_new",
-    "img_size": 224,
-    "num_classes": 2,
-    "dropout": 0.3,
-}
-
-to_tensor = transforms.Compose([
-    transforms.ToTensor(),
-    transforms.Resize((HCLS["img_size"], HCLS["img_size"])),
-    transforms.Normalize(mean=(0.485, 0.456, 0.406),
-                         std=(0.229, 0.224, 0.225)),
-])
-
-# -------------------------------
-# Cached model loaders
-# -------------------------------
-@st.cache_resource(show_spinner="Loading YOLO (ONNX)…")
-def load_yolo() -> YOLOOnnx:
-    onnx_path = hf_download(REPO_YOLO, YOLO_ONNX, token=HF_TOKEN)
-    return YOLOOnnx(onnx_path, img_size=640)
-
-@st.cache_resource(show_spinner="Loading DPN-68 classifier…")
-def load_cls() -> PneumoniaModel:
-    ckpt_path = hf_download(REPO_DPN, DPN_CKPT, token=HF_TOKEN)
-    model, info = PneumoniaModel.load_from_ckpt_auto_strict(ckpt_path, HCLS, map_location=DEVICE)
+@st.cache_resource(show_spinner="Downloading DPN-68 checkpoint from Hugging Face…")
+def get_classifier():
+    ckpt_path = hf_download(HF_MODEL_REPO_DPN, HF_FILENAME_DPN, repo_type="model")
+    h = {
+        "model": "dpn68_new",
+        "img_size": 224,
+        "batch_size": 64,
+        "num_workers": 2,
+        "dropout": 0.3,
+        "num_classes": 2,
+        "pin_memory": True,
+        "lr": 5e-5,
+        "max_epochs": 64,
+        "patience": 10,
+        "balance": True,
+    }
+    model = PneumoniaModel.load_from_checkpoint(ckpt_path, h=h, strict=False, map_location=DEVICE)
     model.to(DEVICE).eval()
     return model
 
-# -------------------------------
-# Detector wrapper
-# -------------------------------
-def detect_lung_bbox(
-    det_model: YOLOOnnx,
-    rgb: np.ndarray,
-    conf: float,
-) -> Optional[Tuple[int,int,int,int]]:
-    xyxy, scores, cls = det_model.detect(rgb, conf_thres=conf, iou_thres=0.75)
-    if xyxy.shape[0] == 0:
-        return None
-    areas = (xyxy[:,2] - xyxy[:,0]) * (xyxy[:,3] - xyxy[:,1])
-    i = int(np.argmax(areas))
-    x1, y1, x2, y2 = xyxy[i].astype(int)
-    return x1, y1, x2, y2
+# ======= Sidebar controls =======
+st.sidebar.header("Detection")
+conf = st.sidebar.slider("YOLO confidence", 0.0, 1.0, 0.25, 0.01)
+iou  = st.sidebar.slider("YOLO IoU (NMS)", 0.1, 0.95, 0.75, 0.01)
 
-# -------------------------------
-# UI
-# -------------------------------
-st.title("Pediatric TB X-ray — Detection ▸ Classification ▸ Grad-CAM")
+st.sidebar.header("Grad-CAM")
+cam_method = st.sidebar.selectbox(
+    "CAM method",
+    ["gradcam", "gradcam++", "xgradcam", "layercam", "eigencam", "eigengradcam", "hirescam"],
+    index=0,
+)
+cam_alpha = st.sidebar.slider("Heat alpha", 0.0, 1.0, 0.5, 0.05)
+cam_thr   = st.sidebar.slider("Contour threshold", 0.0, 1.0, 0.4, 0.05)
+display_size = st.sidebar.select_slider("Display size", options=[224, 384, 512, 768], value=512)
 
-with st.sidebar:
-    st.header("Settings")
-    det_conf = st.slider("YOLO confidence", 0.05, 0.95, 0.25, 0.05)
-    cam_method = st.selectbox(
-        "CAM method",
-        ["gradcam", "gradcam++", "xgradcam", "layercam", "eigencam", "eigengradcam", "hirescam", "scorecam", "ablationcam", "fullgrad"],
-        index=0
-    )
-    cam_alpha = st.slider("CAM overlay alpha", 0.1, 0.9, 0.5, 0.05)
-    cam_thr   = st.slider("CAM threshold (contours/boxes)", 0.05, 0.95, 0.40, 0.05)
+st.title("🩺 Pediatric TB X-ray – Detection • Classification • Grad-CAM")
 
-upl = st.file_uploader("Upload a frontal chest X-ray (PNG/JPG)", type=["png","jpg","jpeg"])
-if not upl:
+# ======= File uploader =======
+up = st.file_uploader("Upload a chest X-ray (JPG/PNG)", type=["jpg","jpeg","png"])
+if not up:
     st.info("Upload an image to begin.")
     st.stop()
 
-# Read image as RGB
-im = Image.open(upl).convert("RGB")
-orig_rgb = np.array(im, dtype=np.uint8)
+# Read as RGB (np.uint8)
+orig = Image.open(io.BytesIO(up.read())).convert("RGB")
+orig_rgb = np.array(orig)  # HxWx3 RGB
+H0, W0 = orig_rgb.shape[:2]
 
-st.subheader("Original")
-st.image(im, caption="Uploaded image", use_container_width=True)
+# Show original
+st.image(cv2.resize(orig_rgb, (display_size, int(H0 * display_size / W0))), caption="Original", use_column_width=False)
 
-# Load models
-det_model = load_yolo()
-cls_model = load_cls()
+# ======= Load models =======
+yolo = get_yolo_onnx()
+clf  = get_classifier()
 
-# Detect lungs on ORIGINAL coords
-bbox = detect_lung_bbox(det_model, orig_rgb, det_conf)
-if bbox is None:
-    st.error("No lung region detected above the selected confidence.")
+# ======= 1) Detect lungs (ONNX YOLO) =======
+with st.spinner("Detecting lungs…"):
+    boxes = yolo.predict(cv2.cvtColor(orig_rgb, cv2.COLOR_RGB2BGR), conf=conf, iou=iou)
+
+if len(boxes) == 0:
+    st.error("No lungs detected.")
     st.stop()
 
-x1, y1, x2, y2 = bbox
-draw_det = im.copy()
-ImageDraw.Draw(draw_det).rectangle([(x1, y1), (x2, y2)], outline=(0,255,0), width=3)
-st.subheader("Detection")
-st.image(draw_det, caption="Lung bbox on original image", use_container_width=True)
+# Pick the top-scoring box (single class detector)
+x1, y1, x2, y2, score = max(boxes, key=lambda b: b[4])
+x1i, y1i, x2i, y2i = map(lambda v: int(round(v)), (x1, y1, x2, y2))
 
-# Crop lungs in ORIGINAL pixels
-crop_rgb = orig_rgb[y1:y2, x1:x2].copy()
+# Draw detection on full-res image (for display)
+det_vis = orig_rgb.copy()
+cv2.rectangle(det_vis, (x1i,y1i), (x2i,y2i), (0,255,0), 3)
+st.image(cv2.resize(det_vis, (display_size, int(H0 * display_size / W0))), caption=f"Lung detection (conf {score:.2f})", use_column_width=False)
+
+# Crop at original resolution, then resize ONLY for classifier input size
+crop_rgb = orig_rgb[y1i:y2i, x1i:x2i].copy()
 if crop_rgb.size == 0:
-    st.error("Empty crop from detection. Try a different image/confidence threshold.")
+    st.error("Crop is empty after detection. Check input.")
     st.stop()
 
-# Prepare classifier input (224×224)
-inp = to_tensor(Image.fromarray(crop_rgb)).unsqueeze(0).to(DEVICE)
+# ======= 2) Classify =======
+inp = preprocess_cxr_rgb_to_tensor(crop_rgb, size=224).to(DEVICE)
 
-# Classification (no-grad OK)
-with torch.no_grad():
-    logits = cls_model(inp.float())
-    probs = torch.softmax(logits, dim=1)[0].cpu().numpy()
-    pred  = int(probs.argmax())
+with torch.no_grad():  # prediction only
+    logits = clf(inp)
+    probs  = torch.softmax(logits, dim=1).cpu().numpy()[0]
+    pred   = int(probs.argmax())
 
 classes = ["normal", "normal_not"]
-st.markdown(f"**Prediction**: {classes[pred]} &nbsp;&nbsp;|&nbsp;&nbsp; **P(normal_not)** = {probs[1]:.4f}")
+pred_text = f"Prediction: **{classes[pred]}** | P(normal_not) = **{probs[1]:.4f}**"
+st.markdown(pred_text)
 
-# Grad-CAM (must allow grad)
-cam_mask_224 = compute_cam_mask(
-    model=cls_model,
-    input_tensor=inp,          # (1,3,224,224)
-    class_index=1,
+# ======= 3) Grad-CAM (must NOT be in no_grad) =======
+cam_mask = compute_cam_mask(
+    model=clf,
+    input_tensor=inp,           # (1,3,224,224)
+    class_index=1,              # abnormal class
     method=cam_method,
-    use_aug_smooth=True,
-    use_eigen_smooth=True,
+    aug_smooth=True,
+    eigen_smooth=True,
 )
 
-# Map CAM to crop size (original resolution), then render overlays
-crop_h, crop_w = crop_rgb.shape[:2]
-cam_mask_crop = np.array(
-    Image.fromarray((cam_mask_224 * 255).astype(np.uint8)).resize((crop_w, crop_h), Image.BILINEAR)
-) / 255.0
+# cam_mask is at 224×224 (classifier input). Resize to crop’s resolution for overlay.
+cam_on_crop = overlay_heatmap_on_bgr(
+    base_bgr=cv2.cvtColor(crop_rgb, cv2.COLOR_RGB2BGR),
+    cam_mask=cam_mask,
+    alpha=cam_alpha,
+    colormap=cv2.COLORMAP_HOT,
+)
+cont_on_crop, box_on_crop = contours_and_boxes_on_bgr(
+    base_bgr=cv2.cvtColor(crop_rgb, cv2.COLOR_RGB2BGR),
+    cam_mask=cam_mask,
+    threshold=cam_thr,
+    color=(0,0,255),
+    thickness=3,
+)
 
-heat_on_crop = overlay_heatmap_on_rgb(crop_rgb, cam_mask_crop, alpha=cam_alpha, cmap_name="hot")
-cont_on_crop, box_on_crop = contours_and_boxes_on_rgb(crop_rgb, cam_mask_crop, threshold=cam_thr, line_color=(255,0,0), box_color=(255,0,0), thickness=3)
+# For display, downscale AFTER overlay (so mapping is correct)
+def show_resized_bgr(img_bgr, caption):
+    h, w = img_bgr.shape[:2]
+    disp = cv2.resize(img_bgr, (display_size, int(h * display_size / w)))
+    st.image(cv2.cvtColor(disp, cv2.COLOR_BGR2RGB), caption=caption, use_column_width=False)
 
-# heat_on_crop = overlay_heatmap_on_rgb(crop_rgb, cam_mask_crop, alpha=cam_alpha, cmap_name="hot")
-# cont_on_crop, box_on_crop = contours_and_boxes_on_rgb(
-#     crop_rgb, cam_mask_crop, threshold=cam_thr, line_color=(255,0,0), box_color=(255,0,0), thickness=3
-# )
-
-# Paste these back to the full image (for context)
-full_heat = orig_rgb.copy()
-full_heat[y1:y2, x1:x2] = heat_on_crop
-full_cont = orig_rgb.copy()
-full_cont[y1:y2, x1:x2] = cont_on_crop
-full_box  = orig_rgb.copy()
-full_box[y1:y2, x1:x2]  = box_on_crop
-
-# Show downsized (presentation only)
-def show_small(title: str, rgb: np.ndarray):
-    small = Image.fromarray(rgb).resize((224, 224), Image.BILINEAR)
-    st.image(small, caption=title, use_container_width=False)
-
-st.subheader("Grad-CAM on the crop (displayed downsized)")
-c1, c2, c3 = st.columns(3)
-with c1: show_small("Heatmap on crop", heat_on_crop)
-with c2: show_small("Contours on crop", cont_on_crop)
-with c3: show_small("BBox on crop", box_on_crop)
-
-st.subheader("Grad-CAM pasted into full frame (displayed downsized)")
-c4, c5, c6 = st.columns(3)
-with c4: show_small("Heatmap on full frame", full_heat)
-with c5: show_small("Contours on full frame", full_cont)
-with c6: show_small("BBox on full frame", full_box)
+st.subheader("Explainability on the CROPPED lungs")
+show_resized_bgr(cv2.cvtColor(crop_rgb, cv2.COLOR_RGB2BGR), "Crop (BGR view)")
+show_resized_bgr(cam_on_crop, "Grad-CAM heatmap")
+show_resized_bgr(cont_on_crop, "Contours")
+show_resized_bgr(box_on_crop, "Bounding boxes")
 
 st.success("Done.")
