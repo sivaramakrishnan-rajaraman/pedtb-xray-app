@@ -1,108 +1,87 @@
 # src/yolo_onnx.py
 from __future__ import annotations
-from typing import List, Tuple
+from typing import Tuple, List, Optional
 import numpy as np
 import onnxruntime as ort
-from PIL import Image
+import cv2
 
-def _letterbox(im: Image.Image, new_size: int = 640, color=(114,114,114)) -> Tuple[np.ndarray, float, Tuple[int,int]]:
-    """Resize + pad to square new_size while keeping aspect ratio. Returns CHW float32 [0,1]."""
-    w, h = im.size
-    scale = min(new_size / w, new_size / h)
-    nw, nh = int(round(w * scale)), int(round(h * scale))
-    im_resized = im.resize((nw, nh), Image.BILINEAR)
-    canvas = Image.new("RGB", (new_size, new_size), color)
-    pad_w, pad_h = (new_size - nw) // 2, (new_size - nh) // 2
-    canvas.paste(im_resized, (pad_w, pad_h))
-    arr = np.asarray(canvas).astype(np.float32) / 255.0
-    arr = arr.transpose(2, 0, 1)  # CHW
-    return arr, scale, (pad_w, pad_h)
+def letterbox(
+    img: np.ndarray,
+    new_shape: int = 640,
+    color: Tuple[int,int,int] = (114,114,114),
+    stride: int = 32
+):
+    """
+    Resize + pad to meet stride-multiple constraints.
+    Returns: image, scale (r), pad (pad_w, pad_h)
+    """
+    shape = img.shape[:2]  # H, W
+    if isinstance(new_shape, int):
+        new_shape = (new_shape, new_shape)
 
-def _xywh2xyxy(xywh: np.ndarray) -> np.ndarray:
-    x, y, w, h = xywh.T
-    return np.vstack((x - w/2, y - h/2, x + w/2, y + h/2)).T
+    r = min(new_shape[0] / shape[0], new_shape[1] / shape[1])
+    new_unpad = (int(round(shape[1] * r)), int(round(shape[0] * r)))
+    dw, dh = new_shape[1] - new_unpad[0], new_shape[0] - new_unpad[1]
+    dw /= 2; dh /= 2
 
-def _nms(boxes: np.ndarray, scores: np.ndarray, iou_thres: float) -> List[int]:
-    """Greedy NMS."""
-    idxs = scores.argsort()[::-1]
-    keep = []
-    while idxs.size > 0:
-        i = idxs[0]
-        keep.append(i)
-        if idxs.size == 1:
-            break
-        ious = _iou(boxes[i], boxes[idxs[1:]])
-        idxs = idxs[1:][ious < iou_thres]
-    return keep
+    if shape[::-1] != new_unpad:
+        img = cv2.resize(img, new_unpad, interpolation=cv2.INTER_LINEAR)
+    top, bottom = int(round(dh - 0.1)), int(round(dh + 0.1))
+    left, right = int(round(dw - 0.1)), int(round(dw + 0.1))
+    img = cv2.copyMakeBorder(img, top, bottom, left, right, cv2.BORDER_CONSTANT, value=color)
+    return img, r, (left, top)
 
-def _iou(box: np.ndarray, boxes: np.ndarray) -> np.ndarray:
-    x1 = np.maximum(box[0], boxes[:,0])
-    y1 = np.maximum(box[1], boxes[:,1])
-    x2 = np.minimum(box[2], boxes[:,2])
-    y2 = np.minimum(box[3], boxes[:,3])
-    inter = np.clip(x2-x1, a_min=0, a_max=None) * np.clip(y2-y1, a_min=0, a_max=None)
-    a = (box[2]-box[0]) * (box[3]-box[1])
-    b = (boxes[:,2]-boxes[:,0]) * (boxes[:,3]-boxes[:,1])
-    return inter / (a + b - inter + 1e-6)
+def scale_boxes_back(xyxy: np.ndarray, r: float, pad: Tuple[int,int], orig_shape: Tuple[int,int]):
+    """
+    Map boxes from letterboxed space back to original image space.
+    xyxy: (N,4) in resized+pad space
+    """
+    x1 = (xyxy[:,0] - pad[0]) / r
+    y1 = (xyxy[:,1] - pad[1]) / r
+    x2 = (xyxy[:,2] - pad[0]) / r
+    y2 = (xyxy[:,3] - pad[1]) / r
+    boxes = np.stack([x1,y1,x2,y2], axis=1)
+    # clip
+    h, w = orig_shape
+    boxes[:, [0,2]] = boxes[:, [0,2]].clip(0, w-1)
+    boxes[:, [1,3]] = boxes[:, [1,3]].clip(0, h-1)
+    return boxes
 
 class YOLOOnnx:
-    """Minimal YOLOv8-like ONNX runner for single-class detection."""
-    def __init__(self, onnx_path: str, providers: List[str] | None = None):
-        if providers is None:
-            providers = ["CPUExecutionProvider"]
-        self.session = ort.InferenceSession(onnx_path, providers=providers)
-        self.input_name = self.session.get_inputs()[0].name
+    def __init__(self, onnx_path: str, providers: Optional[List[str]] = None, img_size: int = 640):
+        self.session = ort.InferenceSession(
+            onnx_path,
+            providers=providers or ["CUDAExecutionProvider", "CPUExecutionProvider"]
+        )
+        self.img_size = int(img_size)
+
+        # Find input/output names
+        self.input_name  = self.session.get_inputs()[0].name
         self.output_name = self.session.get_outputs()[0].name
 
-    def predict(self, pil_image: Image.Image, conf_thres: float = 0.25, iou_thres: float = 0.75, img_size: int = 640) -> List[Tuple[float,float,float,float,float]]:
+    def detect(self, bgr: np.ndarray, conf_thres: float = 0.25, iou_thres: float = 0.75):
         """
-        Returns list of detections as (x1, y1, x2, y2, score) in ORIGINAL image coords.
+        Returns detections in ORIGINAL pixel coords:
+          boxes_xyxy (N,4), scores (N,), classes (N,)
         """
-        w0, h0 = pil_image.size
-        chw, scale, (padw, padh) = _letterbox(pil_image, new_size=img_size)
-        inp = np.expand_dims(chw, 0)  # 1x3xHxW
+        H0, W0 = bgr.shape[:2]
+        img, r, pad = letterbox(bgr, new_shape=self.img_size)
+        img = img[:, :, ::-1]  # BGR->RGB
+        img = img.transpose(2, 0, 1)  # HWC->CHW
+        img = np.ascontiguousarray(img, dtype=np.float32) / 255.0
+        img = img[None]  # (1,3,h,w)
 
-        pred = self.session.run([self.output_name], {self.input_name: inp})[0]
-        # Shape can be (1, N, C) or (1, C, N); make it (N, C)
-        if pred.ndim != 3:
-            raise RuntimeError(f"Unexpected ONNX output shape: {pred.shape}")
-        if pred.shape[1] < pred.shape[2]:
-            pred = pred[0]            # (N, C)
-        else:
-            pred = pred[0].T          # (N, C)
+        preds = self.session.run([self.output_name], {self.input_name: img})[0]
+        # Expect (1, N, 6) with N post-NMS rows
+        if preds.ndim == 3 and preds.shape[-1] >= 6:
+            det = preds[0]
+            xyxy, scores, cls = det[:, :4], det[:, 4], det[:, 5].astype(np.int32)
+            # filter conf
+            keep = scores >= float(conf_thres)
+            xyxy, scores, cls = xyxy[keep], scores[keep], cls[keep]
+            # map back
+            xyxy = scale_boxes_back(xyxy, r, pad, (H0, W0))
+            return xyxy, scores, cls
 
-        # Expect [x, y, w, h, obj, cls...] ; single class → cls shape (N,1)
-        xywh = pred[:, 0:4]
-        obj  = pred[:, 4]
-        if pred.shape[1] >= 6:
-            cls_prob = pred[:, 5:]
-            if cls_prob.shape[1] == 0:
-                cls_conf = np.ones_like(obj)
-            else:
-                cls_conf = cls_prob.max(axis=1)
-            score = obj * cls_conf
-        else:
-            score = obj
-
-        mask = score >= conf_thres
-        if not np.any(mask):
-            return []
-
-        xywh = xywh[mask]
-        score = score[mask]
-
-        # Convert to padded-canvas xyxy
-        xyxy = _xywh2xyxy(xywh)
-        # Undo padding/scale -> original image coords
-        xyxy[:, [0,2]] -= padw
-        xyxy[:, [1,3]] -= padh
-        xyxy /= scale
-
-        # Clip to image bounds
-        xyxy[:, [0,2]] = np.clip(xyxy[:, [0,2]], 0, w0)
-        xyxy[:, [1,3]] = np.clip(xyxy[:, [1,3]], 0, h0)
-
-        # NMS
-        keep = _nms(xyxy, score, iou_thres=iou_thres)
-        dets = [(float(x1), float(y1), float(x2), float(y2), float(s)) for (x1,y1,x2,y2), s in zip(xyxy[keep], score[keep])]
-        return dets
+        # If your ONNX is raw logits, you'd implement decode+NMS here.
+        raise RuntimeError("Unexpected ONNX output shape. Export with nms=True.")
