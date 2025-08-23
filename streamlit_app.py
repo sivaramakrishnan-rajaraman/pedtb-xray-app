@@ -11,7 +11,7 @@ import cv2
 from ultralytics import YOLO
 
 # Local helpers
-from src.hf_utils import hf_download_robust
+from src.hf_utils import hf_download
 from src.pneumonia_model import PneumoniaModel
 from src.cam_utils import compute_cam_mask, overlay_heatmap_on_bgr
 
