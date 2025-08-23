@@ -6,8 +6,8 @@
 This app demonstrates an end-to-end pipeline on pediatric chest X-rays:
 
 1. **YOLOv8-s (custom)** detects the **lung region** and we **crop** the lungs from the original image.  
-2. **DPN-68 (fine-tuned)** classifies the crop as **Normal** or **TB-related (normal_not)**.  
-3. **Explainability (Grad-CAM family)** overlays heatmaps on the cropped lungs *only when the prediction is TB-related.*
+2. **DPN-68 (fine-tuned)** classifies the crop as **showing Normal lungs** or **TB-related manifestations**.  
+3. **Explainability (CAM family from Jacobgil Pytorch Grad-CAM repository)** overlays heatmaps on the cropped lungs when the model predicts chest X-ray as showing TB-related manifestations.*
 
 All model weights are hosted on **Hugging Face Hub** (downloaded at runtime).
 
