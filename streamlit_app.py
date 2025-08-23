@@ -56,7 +56,7 @@ def preprocess_cxr_rgb_to_tensor(rgb: np.ndarray, size: int = 224) -> torch.Tens
 # -------------------------
 @st.cache_resource(show_spinner="Downloading YOLO (.pt) from Hugging Face…")
 def get_yolo() -> YOLO:
-    yolo_path = hf_download_robust(
+    yolo_path = hf_download(
         repo_id=HF_MODEL_REPO_YOLO,
         filename_or_list=[HF_FILENAME_YOLO, "best.pt"],
         repo_type="model",
@@ -67,7 +67,7 @@ def get_yolo() -> YOLO:
 
 @st.cache_resource(show_spinner="Downloading DPN-68 checkpoint from Hugging Face…")
 def get_classifier() -> PneumoniaModel:
-    ckpt_path = hf_download_robust(
+    ckpt_path = hf_download(
         repo_id=HF_MODEL_REPO_DPN,
         filename_or_list=[HF_FILENAME_DPN, "dpn68_fold2.ckpt", "best.ckpt"],
         repo_type="model",
