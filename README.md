@@ -15,11 +15,11 @@ All model weights are hosted on **Hugging Face Hub** (downloaded at runtime).
 
 ## 🧭 What is Streamlit? What is Streamlit Cloud?
 
-- **Streamlit** is a Python framework for building interactive web apps in a few lines of code. You write a `streamlit_app.py`, and Streamlit renders the UI (widgets, images, charts) in the browser.
-- **Streamlit Cloud** is a hosted service by Streamlit where you point to your **GitHub repository**, and it *automatically* builds and runs your Streamlit app on their servers.  
-  - It uses your repo’s `requirements.txt` to install dependencies.
-  - It runs your app’s main file (e.g., `streamlit_app.py`).
-  - You get a public URL like `https://<your-username>.streamlit.app/`.
+- **Streamlit** is a Python framework for building interactive web apps in a few lines of code. The code `streamlit_app.py` makes Streamlit render the UI (widgets, images, charts) in the browser.
+- **Streamlit Cloud** is a hosted service by Streamlit where we point to our **GitHub repository**, and it *automatically* builds and runs the Streamlit app on their servers.  
+  - It uses repo’s `requirements.txt` to install dependencies.
+  - It runs app’s main file (`streamlit_app.py`).
+  - Gives a public URL (here, it is `https://pedtb-xray-app.streamlit.app/`).
 
 ## 🧱 Repository Structure
 ```bash
