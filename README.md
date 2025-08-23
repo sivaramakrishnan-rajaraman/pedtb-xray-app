@@ -1,6 +1,6 @@
 # 🫁 Explainable Pediatric Chest X-ray Classifier (PedTB)
 
-**Live app:** *(update this link after deploying)*  
+**Live app:**
 [![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://pedtb-xray-app.streamlit.app/)
 
 This app demonstrates an end-to-end pipeline on pediatric chest X-rays:
