@@ -52,7 +52,7 @@ def preprocess_cxr_rgb_to_tensor(rgb: np.ndarray, size: int = 224) -> torch.Tens
     return torch.from_numpy(img)[None]  # (1,3,224,224)
 
 # -------------------------
-# Cached model loaders
+# Small HF fallback helper (fixes the hf_download signature issue)
 # -------------------------
 def _hf_download_with_fallbacks(repo_id: str, candidates, repo_type: str = "model"):
     """
@@ -72,27 +72,26 @@ def _hf_download_with_fallbacks(repo_id: str, candidates, repo_type: str = "mode
             last_err = e
     # If none worked, raise the last error
     raise last_err
-    
+
+# -------------------------
+# Cached model loaders
+# -------------------------
 @st.cache_resource(show_spinner="Downloading YOLO (.pt) from Hugging Face…")
 def get_yolo() -> YOLO:
-    yolo_path = hf_download(
+    yolo_path = _hf_download_with_fallbacks(
         repo_id=HF_MODEL_REPO_YOLO,
-        filename_or_list=[HF_FILENAME_YOLO, "best.pt"],
+        candidates=[HF_FILENAME_YOLO, "best.pt", "weights.pt", "model.pt"],
         repo_type="model",
-        token=None,
     )
-    model = YOLO(yolo_path)
-    return model
+    return YOLO(yolo_path)
 
 @st.cache_resource(show_spinner="Downloading DPN-68 checkpoint from Hugging Face…")
 def get_classifier() -> PneumoniaModel:
-    ckpt_path = hf_download(
+    ckpt_path = _hf_download_with_fallbacks(
         repo_id=HF_MODEL_REPO_DPN,
-        filename_or_list=[HF_FILENAME_DPN, "dpn68_fold2.ckpt", "best.ckpt"],
+        candidates=[HF_FILENAME_DPN, "dpn68_fold2.ckpt", "best.ckpt"],
         repo_type="model",
-        token=None,
     )
-    # Minimal h needed by your LightningModule
     h = {
         "model": "dpn68_new",
         "img_size": 224,
@@ -128,7 +127,7 @@ pipe_width = st.sidebar.select_slider("Column width (px)", options=[300, 400, 50
 # -------------------------
 # Title + uploader
 # -------------------------
-st.title("🩺 Pediatric TB X-ray — Detection → Classification → Grad-CAM")
+st.title("🩺 Pediatric TB X-ray — Lung Detection & Cropping → Cropped Lung Classification → Explanation")
 
 up = st.file_uploader("Upload a chest X-ray (JPG/PNG)", type=["jpg", "jpeg", "png"])
 if not up:
@@ -255,4 +254,3 @@ with c5:
     st.image(cam_on_crop_rgb, caption="Grad-CAM (HOT) on crop", use_container_width=True)
 
 st.success("Done.")
-
