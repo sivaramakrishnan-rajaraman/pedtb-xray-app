@@ -77,7 +77,7 @@ def _hf_download_with_fallbacks(repo_id: str, candidates, repo_type: str = "mode
 # -------------------------
 # Cached model loaders
 # -------------------------
-@st.cache_resource(show_spinner="Downloading YOLO (.pt) from Hugging Face…")
+@st.cache_resource(show_spinner="Initializing YOLO Lung Detector…")
 def get_yolo() -> YOLO:
     yolo_path = _hf_download_with_fallbacks(
         repo_id=HF_MODEL_REPO_YOLO,
@@ -86,7 +86,7 @@ def get_yolo() -> YOLO:
     )
     return YOLO(yolo_path)
 
-@st.cache_resource(show_spinner="Downloading DPN-68 checkpoint from Hugging Face…")
+@st.cache_resource(show_spinner="Initializing TB Classification Model…")
 def get_classifier() -> PneumoniaModel:
     ckpt_path = _hf_download_with_fallbacks(
         repo_id=HF_MODEL_REPO_DPN,
@@ -141,9 +141,9 @@ cam_alpha  = st.sidebar.slider("Heatmap alpha", 0.0, 1.0, 0.5, 0.05)
 # -------------------------
 # Title + uploader
 # -------------------------
-st.title("🩺 Pediatric TB X-ray — Detection → Cropped Classification → (Conditional) Grad-CAM")
+st.title("🩺 Pediatric TB X-ray — Lung Detection → Cropped Classification → Explanation")
 
-up = st.file_uploader("Upload a chest X-ray (JPG/PNG)", type=["jpg", "jpeg", "png"])
+up = st.file_uploader("Upload a Pediatric chest X-ray", type=["jpg", "jpeg", "png"])
 if not up:
     st.info("Upload an image to begin.")
     st.stop()
@@ -205,20 +205,20 @@ if y2i <= y1i: y2i = min(H0 - 1, y1i + 1)
 
 # Draw YOLO box (ORIGINAL coords) and show immediately
 orig_with_box = orig_rgb.copy()
-cv2.rectangle(orig_with_box, (x1i, y1i), (x2i, y2i), (0, 255, 0), 3)
-ph_yolo.image(orig_with_box, caption=f"YOLO box (conf {score:.2f})", use_container_width=True)
+cv2.rectangle(orig_with_box, (x1i, y1i), (x2i, y2i), (255, 0, 0), 4)
+ph_yolo.image(orig_with_box, caption=f"Lung Detected (conf {score:.2f})", use_container_width=True)
 
 # Crop from ORIGINAL and show immediately
 crop_rgb = orig_rgb[y1i:y2i, x1i:x2i].copy()
 if crop_rgb.size == 0:
     st.error("Crop is empty. Detector box was degenerate.")
     st.stop()
-ph_crop.image(crop_rgb, caption="Cropped lungs (original resolution)", use_container_width=True)
+ph_crop.image(crop_rgb, caption="Cropped lung", use_container_width=True)
 
 # -------------------------
 # 2) Classify the crop (exact test preprocessing)
 # -------------------------
-with st.spinner("Classifying cropped lungs…"):
+with st.spinner("Classifying the cropped lung…"):
     inp = preprocess_cxr_rgb_to_tensor(crop_rgb, size=224).to(DEVICE)
     with torch.no_grad():
         logits = clf(inp)
@@ -229,9 +229,9 @@ classes = ["normal", "normal_not"]
 pred_prob = float(probs[pred])  # only the predicted class prob
 
 if pred == 1:
-    verdict_text = f"This chest X-ray **manifests TB-related manifestations** (probability **{pred_prob:.4f}**)."
+    verdict_text = f"This pediatric chest X-ray **manifests TB-related manifestations** (probability **{pred_prob:.4f}**)."
 else:
-    verdict_text = f"This chest X-ray **shows normal lungs** (probability **{pred_prob:.4f}**)."
+    verdict_text = f"This pediatric chest X-ray **shows normal lungs** (probability **{pred_prob:.4f}**)."
 
 ph_verdict.markdown("#### Model verdict")
 ph_verdict.markdown(verdict_text)
@@ -241,7 +241,7 @@ ph_verdict.markdown(verdict_text)
 #    Ensure CAM runs outside no_grad().
 # -------------------------
 if pred == 1:
-    with st.spinner("Computing Grad-CAM…"):
+    with st.spinner("Computing activations for explainablity…"):
         # Compute CAM on the 224×224 classifier input
         cam_mask_224 = compute_cam_mask(
             model=clf,
