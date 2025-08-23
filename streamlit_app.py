@@ -141,7 +141,7 @@ cam_alpha  = st.sidebar.slider("Heatmap alpha", 0.0, 1.0, 0.5, 0.05)
 # -------------------------
 # Title + uploader
 # -------------------------
-st.title("🩺 Pediatric TB X-ray — Lung Detection → Cropped Classification → Explanation")
+st.title("🩺 Pediatric TB X-ray — Lung Detection → Cropped Lung Classification → Explanation")
 
 up = st.file_uploader("Upload a Pediatric chest X-ray", type=["jpg", "jpeg", "png"])
 if not up:
