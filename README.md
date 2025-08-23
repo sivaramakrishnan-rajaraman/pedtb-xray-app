@@ -1,7 +1,7 @@
 # 🫁 Explainable Pediatric Chest X-ray Classifier
 
 **Live app:** *(update this link after deploying)*  
-[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://sivaramakrishhnan.streamlit.app/)
+[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://pedtb-xray-app.streamlit.app/)
 
 This app demonstrates a full pipeline on CXR images:
 
@@ -20,8 +20,7 @@ pneumonia-xray-app/
 ├─ .gitignore
 └─ src/
 ├─ hf_utils.py # Helper to download from Hugging Face Hub
-├─ yolo_utils.py # YOLO detection + crop utilities
-├─ model.py # PneumoniaModel (DPN-68 compatible)
+├─ pneumonia_model.py # PneumoniaModel (DPN-68 compatible)
 └─ cam_utils.py # Grad-CAM utilities
 ```
 ## 🚀 Run locally
