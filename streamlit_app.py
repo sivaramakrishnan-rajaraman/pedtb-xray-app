@@ -54,6 +54,25 @@ def preprocess_cxr_rgb_to_tensor(rgb: np.ndarray, size: int = 224) -> torch.Tens
 # -------------------------
 # Cached model loaders
 # -------------------------
+def _hf_download_with_fallbacks(repo_id: str, candidates, repo_type: str = "model"):
+    """
+    Try a list of filenames on the Hugging Face Hub and return the first that exists.
+    """
+    last_err = None
+    for fn in candidates:
+        try:
+            return hf_download(
+                repo_id=repo_id,
+                filename=fn,
+                repo_type=repo_type,
+                token=None,
+                force_download=False,
+            )
+        except Exception as e:
+            last_err = e
+    # If none worked, raise the last error
+    raise last_err
+    
 @st.cache_resource(show_spinner="Downloading YOLO (.pt) from Hugging Face…")
 def get_yolo() -> YOLO:
     yolo_path = hf_download(
