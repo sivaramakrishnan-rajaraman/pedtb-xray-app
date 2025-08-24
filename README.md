@@ -1,29 +1,28 @@
-# 🫁 Explainable Pediatric Chest X-ray Classifier
+# 🫁 Explainable Pediatric Frontal Chest X-ray Classifier
 
 **Live app:**
 [![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://pedtb-xray-app.streamlit.app/)
 
-This app demonstrates an end-to-end pipeline on pediatric chest X-rays:
+This app demonstrates an end-to-end pipeline on pediatric frontal chest X-rays:
 
-1. **YOLOv8-s (custom)** detects the **lung region** and we **crop** the lungs from the original image.  
-2. **DPN-68 (fine-tuned)** classifies the crop as **showing Normal lungs** or **TB-related manifestations**.  
-3. **Explainability (CAM family from Jacobgil Pytorch Grad-CAM repository)** overlays heatmaps on the cropped lungs when the model predicts chest X-ray as showing TB-related manifestations.*
+1. **Custom YOLO-based lung detector (details will be revealed during publication)** detects the **lung region** and **crops** the lung pixels from the original chest X-ray frontal image.  
+2. **Custom fine-tuned DL model (details will be revealed during publication)** classifies the crop as **showing Normal lungs** or **TB-related signs**.  
+3. **Explainability (CAM family from Jacobgil Pytorch Grad-CAM repository)** overlays heatmaps **(based on the chosen explainability method)** on the cropped lungs when the model predicts chest X-ray as showing TB-related signs and displays the heatmap-overlaid chest X-ray image.*
 
-All model weights are hosted on **Hugging Face Hub** (downloaded at runtime).
+All model weights are hosted on **Hugging Face Hub** and **downloaded at runtime**.
 
 ---
 
 ## 🧭 What is Streamlit? What is Streamlit Cloud?
 
 - **Streamlit** is a Python framework for building interactive web apps in a few lines of code. The code `streamlit_app.py` makes Streamlit render the UI (widgets, images, charts) in the browser.
-- **Streamlit Cloud** is a hosted service by Streamlit where we point to our **GitHub repository**, and it *automatically* builds and runs the Streamlit app on their servers.  
-  - It uses repo’s `requirements.txt` to install dependencies.
+- **Streamlit Cloud** is a hosted service by Streamlit where we point to our **GitHub repository**, and it *automatically* builds the environment, installs dependencies (**based on the requirements.txt file**), and runs the Streamlit app on their servers.  
   - It runs app’s main file (`streamlit_app.py`).
   - Gives a public URL (here, it is `https://pedtb-xray-app.streamlit.app/`).
 
 ## 🧱 Repository Structure
 ```bash
-pneumonia-xray-app/
+pedtb-xray-app/
 ├─ streamlit_app.py # Main Streamlit entry point
 ├─ requirements.txt
 ├─ runtime.txt # Python version pin for Streamlit Cloud ("3.11")
