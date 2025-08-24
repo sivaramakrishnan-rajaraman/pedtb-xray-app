@@ -138,7 +138,7 @@ def compute_cam_mask(
 def overlay_heatmap_on_bgr(
     base_bgr: np.ndarray,                # uint8 (H, W, 3) BGR
     cam_mask: np.ndarray,                # float [0,1], (H, W)
-    alpha: float = 0.5,
+    alpha: float = 0.2,
     cmap_kind: Tuple[str, Union[str, int]] = ("cv2", cv2.COLORMAP_HOT),
 ) -> np.ndarray:
     H, W = base_bgr.shape[:2]
