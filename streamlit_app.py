@@ -242,7 +242,7 @@ if pred == 1:
     cam_mask=cam_mask_crop,      # [0,1]
     alpha=cam_alpha,
     cmap_kind=cmap_kind,
-    threshold=cam_threshold,     
+    # threshold=cam_threshold,     
     )
     # cam_on_crop_bgr = overlay_heatmap_on_bgr(
     #     base_bgr=crop_bgr,
