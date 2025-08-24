@@ -38,8 +38,8 @@ HF_MODEL_REPO_YOLO = st.secrets.get("HF_MODEL_REPO_YOLO", "sivaramakrishhnan/cxr
 HF_FILENAME_YOLO   = st.secrets.get("HF_FILENAME_YOLO",   "best.pt")
 
 HF_MODEL_REPO_CLS  = st.secrets.get("HF_MODEL_REPO_CLS",  "sivaramakrishhnan/cxr-dpn68-tb-cls")
-# HF_FILENAME_CLS    = st.secrets.get("HF_FILENAME_CLS",    "dpn68_fold2.ckpt")
-HF_FILENAME_CLS    = st.secrets.get("HF_FILENAME_CLS",    "vgg13_fold2.ckpt")
+HF_FILENAME_CLS    = st.secrets.get("HF_FILENAME_CLS",    "dpn68_fold2.ckpt")
+# HF_FILENAME_CLS    = st.secrets.get("HF_FILENAME_CLS",    "vgg13_fold2.ckpt")
 
 # -------------------------
 # Classifier preprocessing (exact Biowulf val/test: resize→normalize→CHW)
@@ -78,7 +78,7 @@ def get_classifier() -> TBModel:
     )
     
     h = {
-        "model": "vgg19",  # change to "dpn68_new" when switching architectures (see §3)
+        "model": "dpn68_new",  # change to "dpn68_new" when switching architectures (see §3)
         "img_size": 224,
         "batch_size": 64,
         "num_workers": 2,
@@ -103,7 +103,7 @@ cam_method = st.sidebar.selectbox(
     ["gradcam","gradcam++","scorecam","ablationcam","xgradcam","layercam","fullgrad","eigencam","eigengradcam","hirescam"],
     index=0,
 )
-cam_alpha = st.sidebar.slider("Heatmap alpha", 0.0, 1.0, 0.5, 0.05) #default is 0.5
+# cam_alpha = st.sidebar.slider("Heatmap alpha", 0.0, 1.0, 0.5, 0.05) #default is 0.5
 # cam_threshold = st.sidebar.slider("Activation threshold", 0.0, 1.0, 0.3, 0.05) #default is 0.3
 # cam_method = st.sidebar.selectbox(
 #     "CAM method",
