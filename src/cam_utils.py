@@ -13,9 +13,9 @@ from pytorch_grad_cam import (
 )
 from pytorch_grad_cam.utils.model_targets import ClassifierOutputTarget
 
-# ======================================================================
+# ============================================================================
 # Public mappings so the app can decide how to color each method
-# ======================================================================
+# ============================================================================
 
 # Which family to use for each CAM method: 'mpl' (matplotlib) or 'cv2'
 METHOD_TO_CMAP_KIND: Dict[str, str] = {
@@ -27,8 +27,8 @@ METHOD_TO_CMAP_KIND: Dict[str, str] = {
     "xgradcam":      "mpl",
 
     # OpenCV colormaps (hot/bone/inferno/magma/pink)
-    # (User asked for "afm_hot" and "pnk"—OpenCV does not have AFMHOT,
-    # so we map to the closest available: HOT. "pnk" -> PINK.)
+    # (User asked for "afm_hot" and "pnk"—OpenCV doesn't have AFMHOT,
+    # so we map to HOT; "pnk" → PINK.)
     "layercam":      "cv2",
     "fullgrad":      "cv2",
     "eigencam":      "cv2",
@@ -47,17 +47,16 @@ METHOD_TO_MPL_NAME: Dict[str, str] = {
 
 # Exact OpenCV colormap constants for 'cv2' methods
 METHOD_TO_CV2_CMAP: Dict[str, int] = {
-    # "afm_hot" requested by user → fallback to HOT in OpenCV
-    "layercam":      cv2.COLORMAP_HOT,
+    "layercam":      cv2.COLORMAP_HOT,      # closest to requested "afm_hot"
     "fullgrad":      cv2.COLORMAP_BONE,
     "eigencam":      cv2.COLORMAP_INFERNO,
     "eigengradcam":  cv2.COLORMAP_MAGMA,
-    "hirescam":      cv2.COLORMAP_PINK,  # "pnk" → PINK
+    "hirescam":      cv2.COLORMAP_PINK,     # requested "pnk"
 }
 
-# ======================================================================
+# ============================================================================
 # Internal helpers
-# ======================================================================
+# ============================================================================
 
 def _get_cam_class(method: str):
     """Return the CAM class for a given method string."""
@@ -110,9 +109,9 @@ def _resolve_target_layer(model: nn.Module) -> nn.Module:
         raise RuntimeError("No Conv2d layer found to use for CAM.")
     return c
 
-# ======================================================================
+# ============================================================================
 # Core CAM computation
-# ======================================================================
+# ============================================================================
 
 def compute_cam_mask(
     model: nn.Module,
@@ -137,7 +136,7 @@ def compute_cam_mask(
     target_layer = _resolve_target_layer(model)
     CAMClass = _get_cam_class(method)
 
-    # Some methods ignore targets (e.g., EigenCAM); handle gracefully
+    # EigenCAM ignores targets; others need ClassifierOutputTarget
     targets = None
     if CAMClass is not EigenCAM:
         targets = [ClassifierOutputTarget(int(class_index))]
@@ -145,7 +144,8 @@ def compute_cam_mask(
     cam_obj = CAMClass(
         model=model,
         target_layers=[target_layer],
-        use_cuda=(input_tensor.device.type == "cuda")
+        # 'use_cuda' removed in recent pytorch-grad-cam; device is auto-detected.
+        # reshape_transform=None  # default
     )
     cam_obj.batch_size = 1
 
@@ -173,9 +173,9 @@ def compute_cam_mask(
 
     return cam  # (H,W) float32 in [0,1]
 
-# ======================================================================
+# ============================================================================
 # Coloring (matplotlib or OpenCV) + thresholded, mask-aware overlay
-# ======================================================================
+# ============================================================================
 
 def _apply_mpl_colormap(cam_u8: np.ndarray, cmap_name: str) -> np.ndarray:
     """
@@ -183,17 +183,13 @@ def _apply_mpl_colormap(cam_u8: np.ndarray, cmap_name: str) -> np.ndarray:
     Falls back to OpenCV JET if matplotlib is unavailable.
     """
     try:
-        # Lazy import to avoid hard dependency if not needed
         import matplotlib.cm as cm
-        import numpy as np
         cmap = cm.get_cmap(cmap_name)
-        # cam_u8 -> [0,1] -> RGBA -> RGB
         cam01 = cam_u8.astype(np.float32) / 255.0
         rgb = (cmap(cam01)[..., :3] * 255.0).astype(np.uint8)  # HxWx3 RGB
         bgr = rgb[..., ::-1]  # RGB->BGR
         return bgr
     except Exception:
-        # Fallback: OpenCV JET
         return cv2.applyColorMap(cam_u8, cv2.COLORMAP_JET)
 
 def _apply_cv2_colormap(cam_u8: np.ndarray, cv2_cmap: int) -> np.ndarray:
@@ -219,7 +215,7 @@ def overlay_heatmap_on_bgr(
     cam_mask: np.ndarray,          # float32 (h,w) in [0,1]
     alpha: float = 0.5,            # global max opacity in [0,1]
     colormap: Optional[int] = None,
-    threshold: Optional[float] = 0.3, #activations>threshold are shown, otherwise, None
+    threshold: Optional[float] = None,
     method: Optional[str] = None,  # if given, overrides 'colormap' via per-method palette
 ) -> np.ndarray:
     """
@@ -254,7 +250,6 @@ def overlay_heatmap_on_bgr(
         else:
             heat = _apply_cv2_colormap(cam_u8, int(spec)).astype(np.float32)
     else:
-        # Back-compat: explicit OpenCV colormap or HOT
         cv2_cmap = cv2.COLORMAP_HOT if colormap is None else int(colormap)
         heat = _apply_cv2_colormap(cam_u8, cv2_cmap).astype(np.float32)
 
