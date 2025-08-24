@@ -7,9 +7,9 @@ This app demonstrates an end-to-end pipeline on pediatric frontal chest X-rays:
 
 1. **Custom YOLO-based lung detector (details will be revealed during publication)** detects the **lung region** and **crops** the lung pixels from the original chest X-ray frontal image.  
 2. **Custom fine-tuned DL model (details will be revealed during publication)** classifies the crop as **showing Normal lungs** or **TB-related signs**.  
-3. **Explainability (CAM family from Jacobgil Pytorch Grad-CAM repository)** overlays heatmaps **(based on the chosen explainability method)** on the cropped lungs when the model predicts chest X-ray as showing TB-related signs and displays the heatmap-overlaid chest X-ray image.*
+3. **Explainability (CAM family from Jacobgil Pytorch Grad-CAM repository)** overlays heatmaps **(based on the chosen explainability method)** on the cropped lungs and displays the **heatmap-overlaid chest X-ray image**.
 
-All model weights are hosted on **Hugging Face Hub** and **downloaded at runtime**.
+YOLO and Classifier Pytorch weights are hosted on **Hugging Face Hub** and **downloaded at runtime**.
 
 ---
 
