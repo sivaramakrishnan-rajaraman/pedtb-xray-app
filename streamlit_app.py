@@ -103,7 +103,7 @@ cam_method = st.sidebar.selectbox(
     ["gradcam","gradcam++","scorecam","ablationcam","xgradcam","layercam","fullgrad","eigencam","eigengradcam","hirescam"],
     index=0,
 )
-# cam_alpha = st.sidebar.slider("Heatmap alpha", 0.0, 1.0, 0.5, 0.05) #default is 0.5
+cam_alpha = st.sidebar.slider("Heatmap alpha", 0.0, 1.0, 0.5, 0.05) #default is 0.5
 # cam_threshold = st.sidebar.slider("Activation threshold", 0.0, 1.0, 0.3, 0.05) #default is 0.3
 # cam_method = st.sidebar.selectbox(
 #     "CAM method",
