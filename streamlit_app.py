@@ -238,19 +238,24 @@ if pred == 1:
     # Per-method colormap (mpl for first 5, cv2 for the rest)
     cmap_kind = METHOD_TO_CMAP_KIND[cam_method]  # ('mpl','Reds') or ('cv2', cv2.COLORMAP_*)
     cam_on_crop_bgr = overlay_heatmap_on_bgr(
-        base_bgr=crop_bgr,
-        cam_mask=cam_mask_crop,
-        alpha=cam_alpha,
-        cmap_kind=cmap_kind,
+    base_bgr=crop_bgr,
+    cam_mask=cam_mask_crop,      # [0,1]
+    alpha=cam_alpha,
+    cmap_kind=cmap_kind,
+    threshold=cam_threshold,     
     )
+    # cam_on_crop_bgr = overlay_heatmap_on_bgr(
+    #     base_bgr=crop_bgr,
+    #     cam_mask=cam_mask_crop,
+    #     alpha=cam_alpha,
+    #     cmap_kind=cmap_kind,
+    # )
     cam_on_crop_rgb = cv2.cvtColor(cam_on_crop_bgr, cv2.COLOR_BGR2RGB)
 
     with col5:
-        label = f"Grad-CAM on crop ({cmap_kind[0]}:{cmap_kind[1]})"
+        label = f"Explanation ({cmap_kind[0]}:{cmap_kind[1]})"
         st.markdown(f"<div class='cap-big-bold'>{label}</div>", unsafe_allow_html=True)
         st.image(cam_on_crop_rgb, use_container_width=True)
 else:
     with col5:
         st.info("No explanation shown for normal prediction.")
-
-
