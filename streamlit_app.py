@@ -229,9 +229,9 @@ classes = ["normal", "normal_not"]
 pred_prob = float(probs[pred])  # only the predicted class prob
 
 if pred == 1:
-    verdict_text = f"This pediatric chest X-ray **manifests TB-related manifestations** (probability **{pred_prob:.4f}**)."
+    verdict_text = f"This pediatric frontal chest X-ray reveals findings that are **consistent with Tuberculosis** (probability **{pred_prob:.4f}**)."
 else:
-    verdict_text = f"This pediatric chest X-ray **shows normal lungs** (probability **{pred_prob:.4f}**)."
+    verdict_text = f"This pediatric frontal chest X-ray shows **normal lungs** (probability **{pred_prob:.4f}**)."
 
 ph_verdict.markdown("#### Model verdict")
 ph_verdict.markdown(verdict_text)
