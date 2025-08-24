@@ -12,7 +12,7 @@ from ultralytics import YOLO
 
 # Local helpers
 from src.hf_utils import hf_download
-from src.tb_model import PneumoniaModel   # <- renamed file per your repo plan
+from src.tb_model import TBModel   # 
 from src.cam_utils import compute_cam_mask, overlay_heatmap_on_bgr, METHOD_TO_CMAP_KIND
 
 # =====================
@@ -68,7 +68,7 @@ def get_yolo() -> YOLO:
     return YOLO(yolo_path)
 
 @st.cache_resource(show_spinner="Downloading classifier checkpoint from Hugging Face…")
-def get_classifier() -> PneumoniaModel:
+def get_classifier() -> TBModel:
     ckpt_path = hf_download(
         repo_id=HF_MODEL_REPO_CLS,
         filename=HF_FILENAME_CLS,
@@ -76,9 +76,9 @@ def get_classifier() -> PneumoniaModel:
         token=HF_TOKEN,
         force_download=False,
     )
-    # h matches your LightningModule expectations
+    
     h = {
-        "model": "vgg13",  # change to "dpn68_new" when you switch architectures (see §3)
+        "model": "vgg13",  # change to "dpn68_new" when switching architectures (see §3)
         "img_size": 224,
         "batch_size": 64,
         "num_workers": 2,
@@ -90,7 +90,7 @@ def get_classifier() -> PneumoniaModel:
         "patience": 10,
         "balance": True,
     }
-    model = PneumoniaModel.load_from_checkpoint(ckpt_path, h=h, strict=False, map_location=DEVICE)
+    model = TBModel.load_from_checkpoint(ckpt_path, h=h, strict=False, map_location=DEVICE)
     model.to(DEVICE).eval()
     return model
 
