@@ -78,7 +78,7 @@ def get_classifier() -> TBModel:
     )
     
     h = {
-        "model": "vgg13",  # change to "dpn68_new" when switching architectures (see §3)
+        "model": "vgg19",  # change to "dpn68_new" when switching architectures (see §3)
         "img_size": 224,
         "batch_size": 64,
         "num_workers": 2,
@@ -253,7 +253,8 @@ if pred == 1:
     cam_on_crop_rgb = cv2.cvtColor(cam_on_crop_bgr, cv2.COLOR_BGR2RGB)
 
     with col5:
-        label = f"Explanation ({cmap_kind[0]}:{cmap_kind[1]})"
+        # label = f"Explanation ({cmap_kind[0]}:{cmap_kind[1]})"
+        label = f"Explanation"
         st.markdown(f"<div class='cap-big-bold'>{label}</div>", unsafe_allow_html=True)
         st.image(cam_on_crop_rgb, use_container_width=True)
 else:
